@@ -5176,9 +5176,7 @@ uint16_t WS2812FX::mode_2Dmeatballs(void) {   // Metaballs by Stefan Petrick. Ca
     }
   }
 
-   for (int i=0; i<SEGLEN; i++) {
-      setPixelColor(i, leds[i].red, leds[i].green, leds[i].blue);
-   }
+   setPixels(leds);
 
 #else
   fade_out(224);
@@ -5186,3 +5184,119 @@ uint16_t WS2812FX::mode_2Dmeatballs(void) {   // Metaballs by Stefan Petrick. Ca
 
   return FRAMETIME;
 } // mode_2Dmeatballs()
+
+void WS2812FX::setPixels(CRGB* leds) {
+   for (int i=0; i<SEGLEN; i++) {
+      setPixelColor(i, leds[i].red, leds[i].green, leds[i].blue);
+   }  
+}
+
+/////////////////////////
+//     2D DJLight      //
+/////////////////////////
+
+uint16_t WS2812FX::mode_2DDJLight(void) {   // Written by ??? Adapted by Will Tatam
+  int NUM_LEDS = (matrixWidth * matrixHeight);
+  int mid = NUM_LEDS / 2;
+  CRGB *leds = (CRGB* )ledData;
+
+//  Serial.printf("Mid = %u\n", mid);
+  
+  leds[mid] = CRGB(fftResult[16]/2, fftResult[5]/2, fftResult[0]/2);
+  leds[mid].fadeToBlackBy(map(fftResult[1], 0, 255, 255, 10)); // TODO - Update
+    
+  //move to the left
+  for (int i = NUM_LEDS - 1; i > mid; i--) {
+    leds[i] = leds[i - 1];
+  }
+  // move to the right
+  for (int i = 0; i < mid; i++) {
+    leds[i] = leds[i + 1];
+  }
+
+  EVERY_N_MILLISECONDS(300) {
+    for (int i = 0; i < NUM_LEDS; i++) {
+      leds[i].fadeToBlackBy(10); // TODO: map to fade
+    } 
+  }
+  setPixels(leds);
+  return FRAMETIME;
+}
+
+/////////////////////////
+// 2D Funky plank      //
+/////////////////////////
+
+uint16_t WS2812FX::mode_2DFunkyPlank(void) {   // Written by ??? Adapted by Will Tatam
+
+  CRGB *leds = (CRGB*) ledData;
+
+  int barWidth = (matrixWidth / 16);
+  int bandInc = 1;
+  if(barWidth == 0) {
+    // Matrix narrower than fft bands
+    barWidth = 1;
+    bandInc = (16 / matrixWidth);
+  }
+
+    // display values of
+    int b = 0; 
+    for (int band = 0; band < 16; band += bandInc) {
+      int hue = fftResult[band];
+      int v = map(fftResult[band], 0, 255, 10, 255);
+     if(hue > 0) Serial.printf("Band: %u Value: %u\n", band, hue);
+     for (int w = 0; w < barWidth; w++) {
+         int xpos = (barWidth * b) + w;
+         if(hue > 0) Serial.printf("band: %u xpos:  %u\n", band, xpos);
+         leds[XY(xpos, 0)] = CHSV(hue, 255, v);
+      }
+      b++;
+    }
+
+   // Update the display:
+  for (int i = (matrixHeight - 1); i > 0; i--) {
+    for (int j = (matrixWidth - 1); j >= 0; j--) {
+      int src = XY(j, (i - 1));
+      int dst = XY(j, i);
+      leds[dst] = leds[src];
+    }
+  }
+
+  setPixels(leds);
+  
+  return FRAMETIME;
+}
+
+/////////////////////////
+// 2D EQ               //
+/////////////////////////
+
+uint16_t WS2812FX::mode_2DGEQ(void) {
+   
+  int barWidth = (matrixWidth / 16);
+  int bandInc = 1;
+  if(barWidth == 0) {
+    // Matrix narrower than fft bands
+    barWidth = 1;
+    bandInc = (16 / matrixWidth);
+  }
+
+    int b = 0;
+    for (int band = 0; band < 16; band += bandInc) {
+      int count = map(fftResult[band], 0, 255, 0, matrixHeight);
+      for (int w = 0; w < barWidth; w++) {
+        int xpos = (barWidth * b) + w;
+        for (int i = 0; i <= matrixHeight; i++) {
+          if (i <= count) {
+            CRGB color = CHSV((band * 35), 255, 255);
+            setPixelColor(XY(xpos, i), color.red, color.green, color.blue);
+          }
+          else {
+            setPixelColor(XY(xpos, i), 0,0,0);
+          }
+        }
+      }
+      b++;
+    }
+    return FRAMETIME;
+}

@@ -110,7 +110,7 @@
 #define IS_REVERSE      ((SEGMENT.options & REVERSE     ) == REVERSE     )
 #define IS_SELECTED     ((SEGMENT.options & SELECTED    ) == SELECTED    )
 
-#define MODE_COUNT                     143
+#define MODE_COUNT                     146
 
 #define FX_MODE_STATIC                   0
 #define FX_MODE_BLINK                    1
@@ -255,7 +255,9 @@
 #define FX_MODE_2DMATRIX               140
 #define FX_MODE_2DMEATBALLS            141
 #define FX_FFT_TEST                    142
-
+#define FX_MODE_2DDJLIGHT              143
+#define FX_MODE_2DFUNKYPLANK           144
+#define FX_MODE_2DGEQ                  145
 
 // Sound reactive external variables
 extern int sample;
@@ -501,7 +503,10 @@ class WS2812FX {
       _mode[FX_MODE_2DMATRIX]                = &WS2812FX::mode_2Dmatrix;
       _mode[FX_MODE_2DMEATBALLS]             = &WS2812FX::mode_2Dmeatballs;
       _mode[FX_FFT_TEST]                     = &WS2812FX::fft_test;
-
+      _mode[FX_MODE_2DDJLIGHT]               = &WS2812FX::mode_2DDJLight;
+      _mode[FX_MODE_2DFUNKYPLANK]            = &WS2812FX::mode_2DFunkyPlank;
+      _mode[FX_MODE_2DGEQ]                   = &WS2812FX::mode_2DGEQ;
+      
       _brightness = DEFAULT_BRIGHTNESS;
       currentPalette = CRGBPalette16(CRGB::Black);
       targetPalette = CloudColors_p;
@@ -539,7 +544,8 @@ class WS2812FX {
       blur1d( CRGB* leds, uint16_t numLeds, fract8 blur_amount),
       blur2d( CRGB* leds, uint8_t width, uint8_t height, fract8 blur_amount),
       blurRows( CRGB* leds, uint8_t width, uint8_t height, fract8 blur_amount),
-      blurColumns(CRGB* leds, uint8_t width, uint8_t height, fract8 blur_amount);
+      blurColumns(CRGB* leds, uint8_t width, uint8_t height, fract8 blur_amount),
+      setPixels(CRGB* leds);
 
     bool
       reverseMode = false,      //is the entire LED strip reversed?
@@ -748,7 +754,10 @@ class WS2812FX {
       mode_2Ddna(void),
       mode_2Dmatrix(void),
       mode_2Dmeatballs(void),
-      fft_test(void);
+      fft_test(void),
+      mode_2DDJLight(void),
+      mode_2DFunkyPlank(void),
+      mode_2DGEQ(void);
 
   private:
     NeoPixelWrapper *bus;
@@ -838,7 +847,7 @@ const char JSON_mode_names[] PROGMEM = R"=====([
 "Phased Noise","TwinkleUp","Noise Pal","Sine","* Pixels","* Pixelwave","* Juggles","* Matripix","* Gravimeter","* Plasmoid",
 "* Puddles","* Midnoise","* Noisemeter","** Freqwave","** Freqmatrix","** Spectral","* Waterfall","** Freqpixel","** Binmap","** Noisepeak",
 "* Noisefire","* Puddlepeak","** Noisemove","2D Plasma","Perlin Move","* Ripple Peak","2D FireNoise","2D Squared Swirl","2D Fire2012","2D DNA",
-"2D Matrix","2D Meatballs","** FFT_TEST"
+"2D Matrix","2D Meatballs","** FFT_TEST","** 2D DJ Light","** 2D Funky Plank", "** 2D EQ"
 ])=====";
 
 
