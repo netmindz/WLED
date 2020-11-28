@@ -5247,7 +5247,6 @@ uint16_t WS2812FX::mode_2DFunkyPlank(void) {   // Written by ??? Adapted by Will
      if(hue > 0) Serial.printf("Band: %u Value: %u\n", band, hue);
      for (int w = 0; w < barWidth; w++) {
          int xpos = (barWidth * b) + w;
-         if(hue > 0) Serial.printf("band: %u xpos:  %u\n", band, xpos);
          leds[XY(xpos, 0)] = CHSV(hue, 255, v);
       }
       b++;
@@ -5281,22 +5280,55 @@ uint16_t WS2812FX::mode_2DGEQ(void) {
     bandInc = (16 / matrixWidth);
   }
 
-    int b = 0;
-    for (int band = 0; band < 16; band += bandInc) {
-      int count = map(fftResult[band], 0, 255, 0, matrixHeight);
-      for (int w = 0; w < barWidth; w++) {
-        int xpos = (barWidth * b) + w;
-        for (int i = 0; i <= matrixHeight; i++) {
-          if (i <= count) {
-            CRGB color = CHSV((band * 35), 255, 255);
-            setPixelColor(XY(xpos, i), color.red, color.green, color.blue);
-          }
-          else {
-            setPixelColor(XY(xpos, i), 0,0,0);
-          }
+  int b = 0;
+  for (int band = 0; band < 16; band += bandInc) {
+    int count = map(fftResult[band], 0, 255, 0, matrixHeight);
+    for (int w = 0; w < barWidth; w++) {
+      int xpos = (barWidth * b) + w;
+      for (int i = 0; i <= matrixHeight; i++) {
+        if (i <= count) {
+          CRGB color = CHSV((band * 35), 255, 255);
+          setPixelColor(XY(xpos, i), color.red, color.green, color.blue);
+        }
+        else {
+          setPixelColor(XY(xpos, i), 0,0,0);
         }
       }
-      b++;
     }
-    return FRAMETIME;
+    b++;
+  }
+  return FRAMETIME;
+}
+
+/////////////////////////
+// 2D Squares          //
+/////////////////////////
+
+int hue = 0;
+int hueOffset = 10;
+uint16_t WS2812FX::mode_2Dsquares(void) {
+
+ CRGB *leds = (CRGB*) ledData;
+  fill_solid(leds, (matrixWidth * matrixHeight), CRGB::Black);
+  
+  for(int s = 0; s < (matrixWidth / 2); s++) {
+    CRGB color = CHSV((hue + (hueOffset * (s * 0.5))), 255, 155);
+    int p = (matrixWidth - 1) - s;
+    for(int i = s; i <= p; i++) {
+      leds[XY(i,s)] = color;
+    }
+    for(int i = s; i <= p; i++) {
+      leds[XY(s,i)] = color;
+    }
+    for(int i = s; i <= p; i++) {
+      leds[XY(p,i)] = color;
+    }
+    for(int i = s; i <= p; i++) {
+      leds[XY(i,p)] = color;
+    }
+  }
+  hue += 8;
+  if(hue % 4 == 0) hueOffset += 1;
+  setPixels(leds);
+  return map(speed, 0, 255, 1000, 0);
 }

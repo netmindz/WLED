@@ -110,7 +110,7 @@
 #define IS_REVERSE      ((SEGMENT.options & REVERSE     ) == REVERSE     )
 #define IS_SELECTED     ((SEGMENT.options & SELECTED    ) == SELECTED    )
 
-#define MODE_COUNT                     146
+#define MODE_COUNT                     147
 
 #define FX_MODE_STATIC                   0
 #define FX_MODE_BLINK                    1
@@ -258,6 +258,7 @@
 #define FX_MODE_2DDJLIGHT              143
 #define FX_MODE_2DFUNKYPLANK           144
 #define FX_MODE_2DGEQ                  145
+#define FX_MODE_2DSQUARES              146
 
 // Sound reactive external variables
 extern int sample;
@@ -506,6 +507,8 @@ class WS2812FX {
       _mode[FX_MODE_2DDJLIGHT]               = &WS2812FX::mode_2DDJLight;
       _mode[FX_MODE_2DFUNKYPLANK]            = &WS2812FX::mode_2DFunkyPlank;
       _mode[FX_MODE_2DGEQ]                   = &WS2812FX::mode_2DGEQ;
+      _mode[FX_MODE_2DSQUARES]               = &WS2812FX::mode_2Dsquares;
+      
       
       _brightness = DEFAULT_BRIGHTNESS;
       currentPalette = CRGBPalette16(CRGB::Black);
@@ -757,7 +760,8 @@ class WS2812FX {
       fft_test(void),
       mode_2DDJLight(void),
       mode_2DFunkyPlank(void),
-      mode_2DGEQ(void);
+      mode_2DGEQ(void),
+      mode_2Dsquares(void);
 
   private:
     NeoPixelWrapper *bus;
@@ -847,7 +851,7 @@ const char JSON_mode_names[] PROGMEM = R"=====([
 "Phased Noise","TwinkleUp","Noise Pal","Sine","* Pixels","* Pixelwave","* Juggles","* Matripix","* Gravimeter","* Plasmoid",
 "* Puddles","* Midnoise","* Noisemeter","** Freqwave","** Freqmatrix","** Spectral","* Waterfall","** Freqpixel","** Binmap","** Noisepeak",
 "* Noisefire","* Puddlepeak","** Noisemove","2D Plasma","Perlin Move","* Ripple Peak","2D FireNoise","2D Squared Swirl","2D Fire2012","2D DNA",
-"2D Matrix","2D Meatballs","** FFT_TEST","** 2D DJ Light","** 2D Funky Plank", "** 2D EQ"
+"2D Matrix","2D Meatballs","** FFT_TEST","** 2D DJ Light","** 2D Funky Plank", "** 2D EQ", "2D Squares"
 ])=====";
 
 
