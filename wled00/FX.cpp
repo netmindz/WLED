@@ -5325,5 +5325,5 @@ uint16_t WS2812FX::mode_2Dsquares(void) {
   hue += 8;
   if(hue % 4 == 0) hueOffset += 1;
   setPixels(leds);
-  return map(speed, 0, 255, 1000, 0);
+  return map(SEGMENT.speed, 0, 255, 1000, 0);
 }
