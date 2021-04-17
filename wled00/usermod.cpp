@@ -79,17 +79,6 @@ pinMode(LED_BUILTIN, OUTPUT);
 
 sampling_period_us = round(1000000*(1.0/SAMPLE_RATE));
 
-// Define the FFT Task and lock it to core 0
-xTaskCreatePinnedToCore(
-      FFTcode,                          // Function to implement the task
-      "FFT",                            // Name of the task
-      10000,                            // Stack size in words
-      NULL,                             // Task input parameter
-      1,                                // Priority of the task
-      &FFT_Task,                        // Task handle
-      0);                               // Core where the task should run
-}
-
 // This gets called every time WiFi is (re-)connected. Initialize own network interfaces here
 void userConnected() {
 }
