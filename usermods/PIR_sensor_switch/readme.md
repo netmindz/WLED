@@ -11,18 +11,20 @@ The LED strip is switched [using a relay](https://github.com/Aircoookie/WLED/wik
 
 The info page in the web interface shows the items below
 
-- the state of the sensor. By clicking on the state the sensor can be deactivated/activated. 
-**I recommend to deactivate the sensor before installing an OTA update**.
+- the state of the sensor. By clicking on the state the sensor can be deactivated/activated. Changes persist after a reboot.
+**I recommend to deactivate the sensor before an OTA update and activate it again afterwards**.
 - the remaining time of the off timer. 
 
 ## JSON API
 
-The usermod supports  the following state changes:
+The usermod supports the following state changes:
 
 | JSON key   | Value range | Description                     |
 |------------|-------------|---------------------------------|
 | PIRenabled | bool        | Deactivdate/activate the sensor |
 | PIRoffSec  | 60 to 43200 | Off timer seconds               |
+
+ Changes also persist after a reboot.
 
 ## Sensor connection
 
@@ -55,7 +57,7 @@ Example **usermods_list.cpp**:
 //#include "usermod_v2_example.h"
 //#include "usermod_temperature.h"
 //#include "usermod_v2_empty.h"
-#include  "usermod_PIR_sensor_switch.h"
+#include "usermod_PIR_sensor_switch.h"
 
 void registerUsermods()
 {
@@ -70,6 +72,38 @@ void registerUsermods()
   usermods.add(new PIRsensorSwitch());
 
 }
+```
+
+## API to enable/disable the PIR sensor from outside. For example from another usermod.
+
+The class provides the static method `PIRsensorSwitch* PIRsensorSwitch::GetInstance()` to get a pointer to the usermod object.
+
+To query or change the PIR sensor state the methods `bool PIRsensorEnabled()` and `void EnablePIRsensor(bool enable)` are available. 
+
+### There are two options to get access to the usermod instance:
+
+1. Include `usermod_PIR_sensor_switch.h` **before** you include the other usermod in `usermods_list.cpp'
+
+or
+
+2. Use `#include "usermod_PIR_sensor_switch.h"` at the top of the `usermod.h` where you need it.
+
+**Example usermod.h :**
+```cpp
+#include "wled.h"
+
+#include "usermod_PIR_sensor_switch.h"
+
+class MyUsermod : public Usermod {
+  //...
+
+  void togglePIRSensor() {
+    if (PIRsensorSwitch::GetInstance() != nullptr) {
+      PIRsensorSwitch::GetInstance()->EnablePIRsensor(!PIRsensorSwitch::GetInstance()->PIRsensorEnabled());
+    }
+  }
+  //...
+};
 ```
 
 Have fun - @gegu

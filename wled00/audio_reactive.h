@@ -5,44 +5,77 @@
  * bytes 2400+ are currently ununsed, but might be used for future wled features
  */
 
+// WARNING Sound reactive variables that are used by the animations or other asynchronous routines must NOT
+// have interim values, but only updated in a single calculation. These are:
+//
+// sample     sampleAvg     sampleAgc       samplePeak    myVals[]
+//
+// fftBin[]   fftResult[]   FFT_MajorPeak   FFT_Magnitude
+//
+// Otherwise, the animations may asynchronously read interim values of these variables.
+//
+
 #include "wled.h"
+#include <driver/i2s.h>
 
-//#define MIC_SAMPLING_LOG
+// ALL AUDIO INPUT PINS DEFINED IN wled.h AND CONFIGURABLE VIA UI
 
-const int SAMPLE_RATE = 16000;
+// Comment/Uncomment to toggle usb serial debugging
+// #define SR_DEBUG
 
-//Use userVar0 and userVar1 (API calls &U0=,&U1=, uint16_t)
-#ifndef MIC_PIN
-  #define MIC_PIN   A0
+#ifdef SR_DEBUG
+  #define DEBUGSR_PRINT(x) Serial.print(x)
+  #define DEBUGSR_PRINTLN(x) Serial.println(x)
+  #define DEBUGSR_PRINTF(x...) Serial.printf(x)
+#else
+  #define DEBUGSR_PRINT(x)
+  #define DEBUGSR_PRINTLN(x)
+  #define DEBUGSR_PRINTF(x...)
 #endif
 
-#ifndef LED_BUILTIN       // Set LED_BUILTIN if it is not defined by Arduino framework
+// #define MIC_LOGGER
+// #define MIC_SAMPLING_LOG
+// #define FFT_SAMPLING_LOG
+
+const i2s_port_t I2S_PORT = I2S_NUM_0;
+const int BLOCK_SIZE = 64;
+
+const int SAMPLE_RATE = 10240;                  // Base sample rate in Hz
+
+TaskHandle_t FFT_Task;
+
+//Use userVar0 and userVar1 (API calls &U0=,&U1=, uint16_t)
+
+#ifndef LED_BUILTIN     // Set LED_BUILTIN if it is not defined by Arduino framework
   #define LED_BUILTIN 3
 #endif
 
 #define UDP_SYNC_HEADER "00001"
 
-// As defined in wled.h
-// byte soundSquelch = 10;                          // default squelch value for volume reactive routines
-// byte sampleGain = 0;                             // Define a 'gain' for different types of ADC input devices.
-
-int micIn;                                          // Current sample starts with negative values and large values, which is why it's 16 bit signed
-int sample;                                         // Current sample
-float sampleAvg = 0;                                // Smoothed Average
-float micLev = 0;                                   // Used to convert returned value to have '0' as minimum. A leveller
-uint8_t maxVol = 5;                                 // Reasonable value for constant volume for 'peak detector', as it won't always trigger
-bool samplePeak = 0;                                // Boolean flag for peak. Responding routine must reset this flag
-int sampleAdj;                                      // Gain adjusted sample value.
-#ifdef ESP32                                        // Transmitting doesn't work on ESP8266, don't bother allocating memory
-bool udpSamplePeak = 0;                             // Boolean flag for peak. Set at the same tiem as samplePeak, but reset by transmitAudioData
-#endif
-int sampleAgc;                                      // Our AGC sample
-float multAgc;                                      // sample * multAgc = sampleAgc. Our multiplier
-uint8_t targetAgc = 60;                             // This is our setPoint at 20% of max for the adjusted output
-
+uint8_t maxVol = 10;                            // Reasonable value for constant volume for 'peak detector', as it won't always trigger
+uint8_t binNum;                                 // Used to select the bin for FFT based beat detection.
+uint8_t targetAgc = 60;                         // This is our setPoint at 20% of max for the adjusted output
+uint8_t myVals[32];                             // Used to store a pile of samples because WLED frame rate and WLED sample rate are not synchronized. Frame rate is too low.
+bool samplePeak = 0;                            // Boolean flag for peak. Responding routine must reset this flag
+bool udpSamplePeak = 0;                         // Boolean flag for peak. Set at the same tiem as samplePeak, but reset by transmitAudioData
+int delayMs = 10;                               // I don't want to sample too often and overload WLED
+int micIn;                                      // Current sample starts with negative values and large values, which is why it's 16 bit signed
+int sample;                                     // Current sample. Must only be updated ONCE!!!
+int tmpSample;                                  // An interim sample variable used for calculatioins.
+int sampleAdj;                                  // Gain adjusted sample value
+int sampleAgc;                                  // Our AGC sample
+uint16_t micData;                               // Analog input for FFT
+uint16_t micDataSm;                             // Smoothed mic data, as it's a bit twitchy
+long timeOfPeak = 0;
 long lastTime = 0;
-int delayMs = 10;                                   // I don't want to sample too often and overload WLED.
-double beat = 0;                                    // beat Detection
+float micLev = 0;                               // Used to convert returned value to have '0' as minimum. A leveller
+float multAgc;                                  // sample * multAgc = sampleAgc. Our multiplier
+float sampleAvg = 0;                            // Smoothed Average
+double beat = 0;                                // beat Detection
+
+float expAdjF;                                  // Used for exponential filter.
+float weighting = 0.2;                          // Exponential filter weighting. Will be adjustable in a future release.
+
 
 uint16_t micData;                                   // Analog input for FFT
 uint16_t lastSample;                                // last audio noise sample
@@ -61,87 +94,177 @@ struct audioSyncPacket {
   double FFT_MajorPeak;   //  08 Bytes
 };
 
+double mapf(double x, double in_min, double in_max, double out_min, double out_max);
+
 bool isValidUdpSyncVersion(char header[6]) {
-  return (header == UDP_SYNC_HEADER);
+  if (strncmp(header, UDP_SYNC_HEADER, 6) == 0) {
+    return true;
+  } else {
+    return false;
+  }
 }
 
 void getSample() {
   static long peakTime;
 
   #ifdef WLED_DISABLE_SOUND
-    micIn = inoise8(millis(), millis());            // Simulated analog read
+    micIn = inoise8(millis(), millis());          // Simulated analog read
   #else
-    micIn = analogRead(MIC_PIN);                    // Poor man's analog read
+    micIn = micDataSm;      // micDataSm = ((micData * 3) + micData)/4;
+/*---------DEBUG---------*/
+    DEBUGSR_PRINT("micIn:\tmicData:\tmicIn>>2:\tmic_In_abs:\tsample:\tsampleAdj:\tsampleAvg:\n");
+    DEBUGSR_PRINT(micIn); DEBUGSR_PRINT("\t"); DEBUGSR_PRINT(micData);
+/*-------END DEBUG-------*/
+
+    if (digitalMic == false) micIn = micIn >> 2;  // ESP32 has 2 more bits of A/D than ESP8266, so we need to normalize to 10 bit.
+/*---------DEBUG---------*/
+    DEBUGSR_PRINT("\t\t"); DEBUGSR_PRINT(micIn);
+/*-------END DEBUG-------*/
   #endif
+  micLev = ((micLev * 31) + micIn) / 32;          // Smooth it out over the last 32 samples for automatic centering
+  micIn -= micLev;                                // Let's center it to 0 now
+  micIn = abs(micIn);                             // And get the absolute value of each sample
+/*---------DEBUG---------*/
+  DEBUGSR_PRINT("\t\t"); DEBUGSR_PRINT(micIn);
+/*-------END DEBUG-------*/
 
-  micLev = ((micLev * 31) + micIn) / 32;            // Smooth it out over the last 32 samples for automatic centering
-  micIn -= micLev;                                  // Let's center it to 0 now
-  micIn = abs(micIn);                               // And get the absolute value of each sample
+// Using an exponential filter to smooth out the signal. We'll add controls for this in a future release.
+  expAdjF = (weighting * micIn + (1.0-weighting) * expAdjF);
+  expAdjF = (expAdjF <= soundSquelch) ? 0: expAdjF;
 
-  lastSample = micIn;
+  tmpSample = (int)expAdjF;
 
-  // Using a ternary operator, the resultant sample is either 0 or it's a bit smoothed out with the last sample.
-  sample = (micIn <= soundSquelch) ? 0 : (sample * 3 + micIn) / 4;
+/*---------DEBUG---------*/
+  DEBUGSR_PRINT("\t\t"); DEBUGSR_PRINT(sample);
+/*-------END DEBUG-------*/
 
-  sampleAdj = sample * sampleGain / 40 + sample / 16; // Adjust the gain.
+  sampleAdj = tmpSample * sampleGain / 40 + tmpSample / 16; // Adjust the gain.
   sampleAdj = min(sampleAdj, 255);
-  sample = sampleAdj;                                 // We'll now make our rebase our sample to be adjusted.
+  sample = sampleAdj;                             // ONLY update sample ONCE!!!!
 
-  sampleAvg = ((sampleAvg * 15) + sample) / 16;       // Smooth it out over the last 16 samples.
+  sampleAvg = ((sampleAvg * 15) + sample) / 16;   // Smooth it out over the last 16 samples.
 
-  if (userVar1 == 0)
+/*---------DEBUG---------*/
+  DEBUGSR_PRINT("\t"); DEBUGSR_PRINT(sample);
+  DEBUGSR_PRINT("\t\t"); DEBUGSR_PRINT(sampleAvg); DEBUGSR_PRINT("\n\n");
+/*-------END DEBUG-------*/
+
+  if (millis() - timeOfPeak > MIN_SHOW_DELAY) {   // Auto-reset of samplePeak after a complete frame has passed.
     samplePeak = 0;
+    udpSamplePeak = 0;
+    }
+
+  if (userVar1 == 0) samplePeak = 0;
   // Poor man's beat detection by seeing if sample > Average + some value.
-  if (sample > (sampleAvg + maxVol) && millis() > (peakTime + 100)) {
-  // Then we got a peak, else we don't. Display routines need to reset the samplepeak value in case they miss the trigger.
+  //  Serial.print(binNum); Serial.print("\t"); Serial.print(fftBin[binNum]); Serial.print("\t"); Serial.print(fftAvg[binNum/16]); Serial.print("\t"); Serial.print(maxVol); Serial.print("\t"); Serial.println(samplePeak);
+    if (fftBin[binNum] > ( maxVol) && millis() > (peakTime + 100)) {                     // This goe through ALL of the 255 bins
+  //  if (sample > (sampleAvg + maxVol) && millis() > (peakTime + 200)) {
+  // Then we got a peak, else we don't. The peak has to time out on its own in order to support UDP sound sync.
     samplePeak = 1;
-    #ifdef ESP32
-      udpSamplePeak = 1;
-    #endif
+    timeOfPeak = millis();
+    udpSamplePeak = 1;
     userVar1 = samplePeak;
     peakTime=millis();
   }
+} // getSample()
 
-}  // getSample()
+/*
+ * A simple averaging multiplier to automatically adjust sound sensitivity.
+ */
+void agcAvg() {
 
-
-
-void agcAvg() {                                                     // A simple averaging multiplier to automatically adjust sound sensitivity.
-
-  multAgc = (sampleAvg < 1) ? targetAgc : targetAgc / sampleAvg;    // Make the multiplier so that sampleAvg * multiplier = setpoint
-  sampleAgc = sample * multAgc;
-  if (sampleAgc > 255) sampleAgc = 0;
-
+  multAgc = (sampleAvg < 1) ? targetAgc : targetAgc / sampleAvg;  // Make the multiplier so that sampleAvg * multiplier = setpoint
+  int tmpAgc = sample * multAgc;
+  if (tmpAgc > 255) tmpAgc = 0;
+  sampleAgc = tmpAgc;                             // ONLY update sampleAgc ONCE because it's used elsewhere asynchronously!!!!
   userVar0 = sampleAvg * 4;
   if (userVar0 > 255) userVar0 = 255;
 
 } // agcAvg()
 
 
-  double FFT_MajorPeak = 0;
-  double FFT_Magnitude = 0;
-  double fftResult[16];
+
+////////////////////
+// Begin FFT Code //
+////////////////////
+
+
+
+void transmitAudioData() {
+  if (!udpSyncConnected) return;
+  extern uint8_t myVals[];
+  extern int sampleAgc;
+  extern int sample;
+  extern float sampleAvg;
+  extern bool udpSamplePeak;
+  extern int fftResult[];
+  extern double FFT_Magnitude;
+  extern double FFT_MajorPeak;
+
+  audioSyncPacket transmitData;
+
+  for (int i = 0; i < 32; i++) {
+    transmitData.myVals[i] = myVals[i];
+  }
+
+  transmitData.sampleAgc = sampleAgc;
+  transmitData.sample = sample;
+  transmitData.sampleAvg = sampleAvg;
+  transmitData.samplePeak = udpSamplePeak;
+  udpSamplePeak = 0;                              // Reset udpSamplePeak after we've transmitted it
+
+  for (int i = 0; i < 16; i++) {
+    transmitData.fftResult[i] = (uint8_t)constrain(fftResult[i], 0, 254);
+  }
+
+  transmitData.FFT_Magnitude = FFT_Magnitude;
+  transmitData.FFT_MajorPeak = FFT_MajorPeak;
+
+  fftUdp.beginMulticastPacket();
+  fftUdp.write(reinterpret_cast<uint8_t *>(&transmitData), sizeof(transmitData));
+  fftUdp.endPacket();
+  return;
+} // transmitAudioData()
+
+
+
 
 
 void logAudio() {
+#ifdef MIC_LOGGER
+
+
+//  Serial.print(micIn);      Serial.print(" ");
+//  Serial.print(sample); Serial.print(" ");
+//  Serial.print(sampleAvg); Serial.print(" ");
+//  Serial.print(sampleAgc);  Serial.print(" ");
+//  Serial.print(micData);    Serial.print(" ");
+//  Serial.print(micDataSm);  Serial.print(" ");
+  Serial.println(" ");
+
+#endif
 
 #ifdef MIC_SAMPLING_LOG
   //------------ Oscilloscope output ---------------------------
-    Serial.print(targetAgc); Serial.print(" ");
-    Serial.print(multAgc); Serial.print(" ");
-    Serial.print(sampleAgc); Serial.print(" ");
+  Serial.print(targetAgc); Serial.print(" ");
+  Serial.print(multAgc); Serial.print(" ");
+  Serial.print(sampleAgc); Serial.print(" ");
 
-    Serial.print(sample); Serial.print(" ");
-    Serial.print(sampleAvg); Serial.print(" ");
-    Serial.print(micLev); Serial.print(" ");
-    Serial.print(samplePeak); Serial.print(" ");    //samplePeak = 0;
-    Serial.print(micIn); Serial.print(" ");
-    Serial.print(100); Serial.print(" ");
-    Serial.print(0); Serial.print(" ");
-    Serial.println(" ");
-  #ifdef ESP32                                   // if we are on a ESP32
-    Serial.print("running on core ");               // identify core
-    Serial.println(xPortGetCoreID());
-  #endif
+  Serial.print(sample); Serial.print(" ");
+  Serial.print(sampleAvg); Serial.print(" ");
+  Serial.print(micLev); Serial.print(" ");
+  Serial.print(samplePeak); Serial.print(" ");    //samplePeak = 0;
+  Serial.print(micIn); Serial.print(" ");
+  Serial.print(100); Serial.print(" ");
+  Serial.print(0); Serial.print(" ");
+  Serial.println(" ");
 #endif
-}  // logAudio()
+
+#ifdef FFT_SAMPLING_LOG
+    for(int i=0; i<16; i++) {
+      Serial.print((int)constrain(fftResult[i],0,254));
+      Serial.print(" ");
+    }
+    Serial.println("");
+#endif
+}

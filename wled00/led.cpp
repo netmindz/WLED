@@ -11,6 +11,9 @@ void setValuesFromMainSeg()
   effectCurrent = seg.mode;
   effectSpeed = seg.speed;
   effectIntensity = seg.intensity;
+  effectFFT1 = seg.fft1;
+  effectFFT2 = seg.fft2;
+  effectFFT3 = seg.fft3;
   effectPalette = seg.palette;
 }
 
@@ -30,38 +33,42 @@ void toggleOnOff()
   {
     briLast = bri;
     bri = 0;
+    unloadPlaylist();
   }
+}
+
+
+//scales the brightness with the briMultiplier factor
+byte scaledBri(byte in)
+{
+  uint32_t d = in*briMultiplier;
+  uint32_t val = d/100;
+  if (val > 255) val = 255;
+  return (byte)val;
 }
 
 
 void setAllLeds() {
   if (!realtimeMode || !arlsForceMaxBri)
   {
-    double d = briT*briMultiplier;
-    int val = d/100;
-    if (val > 255) val = 255;
-    strip.setBrightness(val);
+    strip.setBrightness(scaledBri(briT));
   }
-  if (useRGBW && strip.rgbwMode == RGBW_MODE_LEGACY)
+  if (strip.isRgbw && strip.rgbwMode == RGBW_MODE_LEGACY)
   {
-    colorRGBtoRGBW(colT);
-    colorRGBtoRGBW(colSecT);
+    colorRGBtoRGBW(col);
+    colorRGBtoRGBW(colSec);
   }
-  strip.setColor(0, colT[0], colT[1], colT[2], colT[3]);
-  strip.setColor(1, colSecT[0], colSecT[1], colSecT[2], colSecT[3]);
+  strip.setColor(0, col[0], col[1], col[2], col[3]);
+  strip.setColor(1, colSec[0], colSec[1], colSec[2], colSec[3]);
+  if (strip.isRgbw && strip.rgbwMode == RGBW_MODE_LEGACY)
+  {
+    col[3] = 0; colSec[3] = 0;
+  }
 }
 
 
-void setLedsStandard(bool justColors)
+void setLedsStandard()
 {
-  for (byte i=0; i<4; i++)
-  {
-    colOld[i] = col[i];
-    colT[i] = col[i];
-    colSecOld[i] = colSec[i];
-    colSecT[i] = colSec[i];
-  }
-  if (justColors) return;
   briOld = bri;
   briT = bri;
   setAllLeds();
@@ -84,35 +91,48 @@ void colorUpdated(int callMode)
 {
   //call for notifier -> 0: init 1: direct change 2: button 3: notification 4: nightlight 5: other (No notification)
   //                     6: fx changed 7: hue 8: preset cycle 9: blynk 10: alexa
-  if (callMode != NOTIFIER_CALL_MODE_INIT && 
-      callMode != NOTIFIER_CALL_MODE_DIRECT_CHANGE && 
+  if (callMode != NOTIFIER_CALL_MODE_INIT &&
+      callMode != NOTIFIER_CALL_MODE_DIRECT_CHANGE &&
       callMode != NOTIFIER_CALL_MODE_NO_NOTIFY) strip.applyToAllSelected = true; //if not from JSON api, which directly sets segments
-  
-  bool fxChanged = strip.setEffectConfig(effectCurrent, effectSpeed, effectIntensity, effectPalette);
+
+  bool someSel = false;
+
+  if (callMode == NOTIFIER_CALL_MODE_NOTIFICATION) {
+    someSel = (receiveNotificationBrightness || receiveNotificationColor || receiveNotificationEffects);
+  }
+
+  //Notifier: apply received FX to selected segments only if actually receiving FX
+  if (someSel) strip.applyToAllSelected = receiveNotificationEffects;
+
+  bool fxChanged = strip.setEffectConfig(effectCurrent, effectSpeed, effectIntensity, effectFFT1, effectFFT2, effectFFT3, effectPalette) || effectChanged;
   bool colChanged = colorChanged();
+
+  //Notifier: apply received color to selected segments only if actually receiving color
+  if (someSel) strip.applyToAllSelected = receiveNotificationColor;
 
   if (fxChanged || colChanged)
   {
+    effectChanged = false;
     if (realtimeTimeout == UINT32_MAX) realtimeTimeout = 0;
     if (isPreset) {isPreset = false;}
         else {currentPreset = -1;}
-        
+
     notify(callMode);
-    
+
     //set flag to update blynk and mqtt
-    if (callMode != NOTIFIER_CALL_MODE_PRESET_CYCLE) interfaceUpdateCallMode = callMode;
+    interfaceUpdateCallMode = callMode;
   } else {
-    if (nightlightActive && !nightlightActiveOld && 
-        callMode != NOTIFIER_CALL_MODE_NOTIFICATION && 
+    if (nightlightActive && !nightlightActiveOld &&
+        callMode != NOTIFIER_CALL_MODE_NOTIFICATION &&
         callMode != NOTIFIER_CALL_MODE_NO_NOTIFY)
     {
-      notify(NOTIFIER_CALL_MODE_NIGHTLIGHT); 
+      notify(NOTIFIER_CALL_MODE_NIGHTLIGHT);
       interfaceUpdateCallMode = NOTIFIER_CALL_MODE_NIGHTLIGHT;
     }
   }
-  
+
   if (!colChanged) return; //following code is for e.g. initiating transitions
-  
+
   if (callMode != NOTIFIER_CALL_MODE_NO_NOTIFY && nightlightActive && (nightlightMode == NL_MODE_FADE || nightlightMode == NL_MODE_COLORFADE))
   {
     briNlT = bri;
@@ -126,7 +146,7 @@ void colorUpdated(int callMode)
   }
   if (briT == 0)
   {
-    setLedsStandard(true);                                            //do not color transition if starting from off
+    //setLedsStandard(true); //do not color transition if starting from off!
     if (callMode != NOTIFIER_CALL_MODE_NOTIFICATION) resetTimebase(); //effect start from beginning
   }
 
@@ -134,22 +154,18 @@ void colorUpdated(int callMode)
   if (bri > 0) briLast = bri;
 
   //deactivate nightlight if target brightness is reached
-  if (bri == nightlightTargetBri && callMode != NOTIFIER_CALL_MODE_NO_NOTIFY) nightlightActive = false;
-  
+  if (bri == nightlightTargetBri && callMode != NOTIFIER_CALL_MODE_NO_NOTIFY && nightlightMode != NL_MODE_SUN) nightlightActive = false;
+
   if (fadeTransition)
   {
     //set correct delay if not using notification delay
     if (callMode != NOTIFIER_CALL_MODE_NOTIFICATION && !jsonTransitionOnce) transitionDelayTemp = transitionDelay;
     jsonTransitionOnce = false;
+    strip.setTransition(transitionDelayTemp);
     if (transitionDelayTemp == 0) {setLedsStandard(); strip.trigger(); return;}
-    
+
     if (transitionActive)
     {
-      for (byte i=0; i<4; i++)
-      {
-        colOld[i] = colT[i];
-        colSecOld[i] = colSecT[i];
-      }
       briOld = briT;
       tperLast = 0;
     }
@@ -158,6 +174,7 @@ void colorUpdated(int callMode)
     transitionStartTime = millis();
   } else
   {
+    strip.setTransition(0);
     setLedsStandard();
     strip.trigger();
   }
@@ -173,7 +190,7 @@ void updateInterfaces(uint8_t callMode)
     espalexaDevice->setColor(col[0], col[1], col[2]);
   }
   #endif
-  if (callMode != NOTIFIER_CALL_MODE_BLYNK && 
+  if (callMode != NOTIFIER_CALL_MODE_BLYNK &&
       callMode != NOTIFIER_CALL_MODE_NO_NOTIFY) updateBlynk();
   doPublishMqtt = true;
   lastInterfaceUpdate = millis();
@@ -189,7 +206,7 @@ void handleTransitions()
     interfaceUpdateCallMode = 0; //disable
   }
   if (doPublishMqtt) publishMqtt();
-  
+
   if (transitionActive && transitionDelayTemp > 0)
   {
     float tper = (millis() - transitionStartTime)/(float)transitionDelayTemp;
@@ -203,13 +220,8 @@ void handleTransitions()
     }
     if (tper - tperLast < 0.004) return;
     tperLast = tper;
-    for (byte i=0; i<4; i++)
-    {
-      colT[i] = colOld[i]+((col[i] - colOld[i])*tper);
-      colSecT[i] = colSecOld[i]+((colSec[i] - colSecOld[i])*tper);
-    }
     briT    = briOld   +((bri    - briOld   )*tper);
-    
+
     setAllLeds();
   }
 }
@@ -225,7 +237,7 @@ void handleNightlight()
       nightlightDelayMs = (int)(nightlightDelayMins*60000);
       nightlightActiveOld = true;
       briNlT = bri;
-      for (byte i=0; i<4; i++) colNlT[i] = col[i];                                     // remember starting color
+      for (byte i=0; i<4; i++) colNlT[i] = col[i]; // remember starting color
       if (nightlightMode == NL_MODE_SUN)
       {
         //save current
@@ -233,6 +245,7 @@ void handleNightlight()
         colNlT[1] = effectSpeed;
         colNlT[2] = effectPalette;
 
+        strip.setMode(strip.getMainSegmentId(), FX_MODE_STATIC); //make sure seg runtime is reset if left in sunrise mode
         effectCurrent = FX_MODE_SUNRISE;
         effectSpeed = nightlightDelayMins;
         effectPalette = 0;
@@ -274,7 +287,7 @@ void handleNightlight()
       }
       updateBlynk();
       if (macroNl > 0)
-        applyMacro(macroNl);
+        applyPreset(macroNl);
       nightlightActiveOld = false;
     }
   } else if (nightlightActiveOld) //early de-init
@@ -295,10 +308,10 @@ void handleNightlight()
     if (bri == 0 || nightlightActive) return;
 
     if (presetCycCurr < presetCycleMin || presetCycCurr > presetCycleMax) presetCycCurr = presetCycleMin;
-    applyPreset(presetCycCurr,presetApplyBri);
+    applyPreset(presetCycCurr); //this handles colorUpdated() for us
     presetCycCurr++;
-    if (presetCycCurr > 16) presetCycCurr = 1;
-    colorUpdated(NOTIFIER_CALL_MODE_PRESET_CYCLE);
+    if (presetCycCurr > 250) presetCycCurr = 1;
+    interfaceUpdateCallMode = 0; //disable updates to MQTT and Blynk
   }
 }
 
