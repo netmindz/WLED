@@ -78,6 +78,7 @@ if (samples_read > 0) {
 pinMode(LED_BUILTIN, OUTPUT);
 
 sampling_period_us = round(1000000*(1.0/SAMPLE_RATE));
+}
 
 // This gets called every time WiFi is (re-)connected. Initialize own network interfaces here
 void userConnected() {
