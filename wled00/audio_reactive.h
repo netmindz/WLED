@@ -35,14 +35,11 @@
 
 // #define MIC_LOGGER
 // #define MIC_SAMPLING_LOG
-// #define FFT_SAMPLING_LOG
 
 const i2s_port_t I2S_PORT = I2S_NUM_0;
 const int BLOCK_SIZE = 64;
 
 const int SAMPLE_RATE = 10240;                  // Base sample rate in Hz
-
-TaskHandle_t FFT_Task;
 
 //Use userVar0 and userVar1 (API calls &U0=,&U1=, uint16_t)
 
@@ -208,11 +205,7 @@ void agcAvg() {
 
 
 
-////////////////////
-// Begin FFT Code //
-////////////////////
 
-#include "arduinoFFT.h"
 
 void transmitAudioData() {
   if (!udpSyncConnected) return;
@@ -250,149 +243,6 @@ void transmitAudioData() {
   return;
 } // transmitAudioData()
 
-
-
-
-// Create FFT object
-arduinoFFT FFT = arduinoFFT( vReal, vImag, samples, SAMPLE_RATE );
-
-double fftAdd( int from, int to) {
-  int i = from;
-  double result = 0;
-  while ( i <= to) {
-    result += fftBin[i++];
-  }
-  return result;
-}
-
-// FFT main code
-void FFTcode( void * parameter) {
-  //DEBUG_PRINT("FFT running on core: "); DEBUG_PRINTLN(xPortGetCoreID());
-  //double beatSample = 0;  // COMMENTED OUT - UNUSED VARIABLE COMPILER WARNINGS
-  //double envelope = 0;    // COMMENTED OUT - UNUSED VARIABLE COMPILER WARNINGS
-
-  for(;;) {
-    delay(1);           // DO NOT DELETE THIS LINE! It is needed to give the IDLE(0) task enough time and to keep the watchdog happy.
-                        // taskYIELD(), yield(), vTaskDelay() and esp_task_wdt_feed() didn't seem to work.
-
-    // Only run the FFT computing code if we're not in Receive mode
-    if (audioSyncEnabled & (1 << 1))
-      continue;
-
-    microseconds = micros();
-    //extern double volume;   // COMMENTED OUT - UNUSED VARIABLE COMPILER WARNINGS
-
-    for(int i=0; i<samples; i++) {
-      if (digitalMic == false) {
-        micData = analogRead(audioPin);           // Analog Read
-      } else {
-        int32_t digitalSample = 0;
-        // TODO: I2S_POP_SAMLE DEPRECATED, FIND ALTERNATE SOLUTION
-        int bytes_read = i2s_pop_sample(I2S_PORT, (char *)&digitalSample, portMAX_DELAY); // no timeout
-        if (bytes_read > 0) {
-          micData = abs(digitalSample >> 16);
-        }
-      }
-      micDataSm = ((micData * 3) + micData)/4;    // We'll be passing smoothed micData to the volume routines as the A/D is a bit twitchy.
-      vReal[i] = micData;                         // Store Mic Data in an array
-      vImag[i] = 0;
-
-      // MIC DATA DEBUGGING
-      // DEBUGSR_PRINT("micData: ");
-      // DEBUGSR_PRINT(micData);
-      // DEBUGSR_PRINT("\tmicDataSm: ");
-      // DEBUGSR_PRINT("\t");
-      // DEBUGSR_PRINT(micDataSm);
-      // DEBUGSR_PRINT("\n");
-
-      if (digitalMic == false) { while(micros() - microseconds < sampling_period_us){/*empty loop*/} }
-
-      microseconds += sampling_period_us;
-    }
-
-    FFT.Windowing( FFT_WIN_TYP_HAMMING, FFT_FORWARD );      // Weigh data
-    FFT.Compute( FFT_FORWARD );                             // Compute FFT
-    FFT.ComplexToMagnitude();                               // Compute magnitudes
-
-    //
-    // vReal[3 .. 255] contain useful data, each a 20Hz interval (60Hz - 5120Hz).
-    // There could be interesting data at bins 0 to 2, but there are too many artifacts.
-    //
-    FFT.MajorPeak(&FFT_MajorPeak, &FFT_Magnitude);          // let the effects know which freq was most dominant
-
-    for (int i = 0; i < samples; i++) {                     // Values for bins 0 and 1 are WAY too large. Might as well start at 3.
-      double t = 0.0;
-      t = abs(vReal[i]);
-      t = t / 16.0;                                         // Reduce magnitude. Want end result to be linear and ~4096 max.
-      fftBin[i] = t;
-    } // for()
-
-
-/* This FFT post processing is a DIY endeavour. What we really need is someone with sound engineering expertise to do a great job here AND most importantly, that the animations look GREAT as a result.
- *
- *
- * Andrew's updated mapping of 256 bins down to the 16 result bins with Sample Freq = 10240, samples = 512 and some overlap.
- * Based on testing, the lowest/Start frequency is 60 Hz (with bin 3) and a highest/End frequency of 5120 Hz in bin 255.
- * Now, Take the 60Hz and multiply by 1.320367784 to get the next frequency and so on until the end. Then detetermine the bins.
- * End frequency = Start frequency * multiplier ^ 16
- * Multiplier = (End frequency/ Start frequency) ^ 1/16
- * Multiplier = 1.320367784
- */
-
-//                                               Range
-      fftCalc[0] = (fftAdd(3,4)) /2;        // 60 - 100
-      fftCalc[1] = (fftAdd(4,5)) /2;        // 80 - 120
-      fftCalc[2] = (fftAdd(5,7)) /3;        // 100 - 160
-      fftCalc[3] = (fftAdd(7,9)) /3;        // 140 - 200
-      fftCalc[4] = (fftAdd(9,12)) /4;       // 180 - 260
-      fftCalc[5] = (fftAdd(12,16)) /5;      // 240 - 340
-      fftCalc[6] = (fftAdd(16,21)) /6;      // 320 - 440
-      fftCalc[7] = (fftAdd(21,28)) /8;      // 420 - 600
-      fftCalc[8] = (fftAdd(29,37)) /10;     // 580 - 760
-      fftCalc[9] = (fftAdd(37,48)) /12;     // 740 - 980
-      fftCalc[10] = (fftAdd(48,64)) /17;    // 960 - 1300
-      fftCalc[11] = (fftAdd(64,84)) /21;    // 1280 - 1700
-      fftCalc[12] = (fftAdd(84,111)) /28;   // 1680 - 2240
-      fftCalc[13] = (fftAdd(111,147)) /37;  // 2220 - 2960
-      fftCalc[14] = (fftAdd(147,194)) /48;  // 2940 - 3900
-      fftCalc[15] = (fftAdd(194, 255)) /62; // 3880 - 5120
-
-
-//   Noise supression of fftCalc bins using soundSquelch adjustment for different input types.
-    for (int i=0; i < 16; i++) {
-        fftCalc[i] = fftCalc[i]-(float)soundSquelch*(float)linearNoise[i]/4.0 <= 0? 0 : fftCalc[i];
-    }
-
-// Adjustment for frequency curves.
-  for (int i=0; i < 16; i++) {
-    fftCalc[i] = fftCalc[i] * fftResultPink[i];
-  }
-
-// Manual linear adjustment of gain using sampleGain adjustment for different input types.
-    for (int i=0; i < 16; i++) {
-        fftCalc[i] = fftCalc[i] * sampleGain / 40 + fftCalc[i]/16.0;
-    }
-
-
-// Now, let's dump it all into fftResult. Need to do this, otherwise other routines might grab fftResult values prematurely.
-    for (int i=0; i < 16; i++) {
-        // fftResult[i] = (int)fftCalc[i];
-        fftResult[i] = constrain((int)fftCalc[i],0,254);
-        fftAvg[i] = (float)fftResult[i]*.05 + (1-.05)*fftAvg[i];
-    }
-
-
-// Looking for fftResultMax for each bin using Pink Noise
-//      for (int i=0; i<16; i++) {
-//          fftResultMax[i] = ((fftResultMax[i] * 63.0) + fftResult[i]) / 64.0;
-//         Serial.print(fftResultMax[i]*fftResultPink[i]); Serial.print("\t");
-//        }
-//      Serial.println(" ");
-
-  } // for(;;)
-} // FFTcode()
-
-
 void logAudio() {
 #ifdef MIC_LOGGER
 
@@ -423,52 +273,4 @@ void logAudio() {
   Serial.println(" ");
 #endif
 
-#ifdef FFT_SAMPLING_LOG
-  #if 0
-    for(int i=0; i<16; i++) {
-      Serial.print(fftResult[i]);
-      Serial.print("\t");
-    }
-    Serial.println("");
-  #endif
-
-  // OPTIONS are in the following format: Description \n Option
-  //
-  // Set true if wanting to see all the bands in their own vertical space on the Serial Plotter, false if wanting to see values in Serial Monitor
-  const bool mapValuesToPlotterSpace = false;
-  // Set true to apply an auto-gain like setting to to the data (this hasn't been tested recently)
-  const bool scaleValuesFromCurrentMaxVal = false;
-  // prints the max value seen in the current data
-  const bool printMaxVal = false;
-  // prints the min value seen in the current data
-  const bool printMinVal = false;
-  // if !scaleValuesFromCurrentMaxVal, we scale values from [0..defaultScalingFromHighValue] to [0..scalingToHighValue], lower this if you want to see smaller values easier
-  const int defaultScalingFromHighValue = 256;
-  // Print values to terminal in range of [0..scalingToHighValue] if !mapValuesToPlotterSpace, or [(i)*scalingToHighValue..(i+1)*scalingToHighValue] if mapValuesToPlotterSpace
-  const int scalingToHighValue = 256;
-  // set higher if using scaleValuesFromCurrentMaxVal and you want a small value that's also the current maxVal to look small on the plotter (can't be 0 to avoid divide by zero error)
-  const int minimumMaxVal = 1;
-
-  int maxVal = minimumMaxVal;
-  int minVal = 0;
-  for(int i = 0; i < 16; i++) {
-    if(fftResult[i] > maxVal) maxVal = fftResult[i];
-    if(fftResult[i] < minVal) minVal = fftResult[i];
-  }
-  for(int i = 0; i < 16; i++) {
-    Serial.print(i); Serial.print(":");
-    Serial.printf("%04d ", map(fftResult[i], 0, (scaleValuesFromCurrentMaxVal ? maxVal : defaultScalingFromHighValue), (mapValuesToPlotterSpace*i*scalingToHighValue)+0, (mapValuesToPlotterSpace*i*scalingToHighValue)+scalingToHighValue-1));
-  }
-  if(printMaxVal) {
-    Serial.printf("maxVal:%04d ", maxVal + (mapValuesToPlotterSpace ? 16*256 : 0));
-  }
-  if(printMinVal) {
-    Serial.printf("%04d:minVal ", minVal);  // printed with value first, then label, so negative values can be seen in Serial Monitor but don't throw off y axis in Serial Plotter
-  }
-  if(mapValuesToPlotterSpace)
-    Serial.printf("max:%04d ", (printMaxVal ? 17 : 16)*256); // print line above the maximum value we expect to see on the plotter to avoid autoscaling y axis
-  else
-    Serial.printf("max:%04d ", 256);
-  Serial.println();
-#endif // FFT_SAMPLING_LOG
 } // logAudio()
