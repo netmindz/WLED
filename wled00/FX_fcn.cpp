@@ -1335,6 +1335,9 @@ void WS2812FX::handle_palette(void)
       targetPalette = RainbowColors_p; break;
     case 12: //Rainbow stripe colors
       targetPalette = RainbowStripeColors_p; break;
+    case 71: //WLEDMM netmindz ar palette +1
+    case 72: //WLEDMM netmindz ar palette +1
+        targetPalette.loadDynamicGradientPalette(getAudioPalette(paletteIndex)); break; 
     default: //progmem palettes
       load_gradient_palette(paletteIndex -13);
   }
@@ -1347,6 +1350,41 @@ void WS2812FX::handle_palette(void)
     currentPalette = targetPalette;
   }
 }
+
+// WLEDMM netmindz ar palette
+uint8_t * Segment::getAudioPalette(int pal) {
+  // https://forum.makerforums.info/t/hi-is-it-possible-to-define-a-gradient-palette-at-runtime-the-define-gradient-palette-uses-the/63339
+
+  um_data_t *um_data;
+  if (!usermods.getUMData(&um_data, USERMOD_ID_AUDIOREACTIVE)) {
+    um_data = simulateSound(SEGMENT.soundSim);
+  }
+  uint8_t *fftResult = (uint8_t*)um_data->u_data[2];
+  uint8_t xyz[12];  // Needs to be 4 times however many colors are being used.
+                    // 3 colors = 12, 4 colors = 16, etc.
+
+  CRGB rgb = getCRGBForBand(0, fftResult, pal);
+  
+  xyz[0] = 0;  // anchor of first color - must be zero
+  xyz[1] = rgb.r;
+  xyz[2] = rgb.g;
+  xyz[3] = rgb.b;
+
+  rgb = getCRGBForBand(4, fftResult, pal);
+  xyz[4] = 128;
+  xyz[5] = rgb.r;
+  xyz[6] = rgb.g;
+  xyz[7] = rgb.b;
+  
+  rgb = getCRGBForBand(8, fftResult, pal);
+  xyz[8] = 255;  // anchor of last color - must be 255
+  xyz[9] = rgb.r;
+  xyz[10] = rgb.g;
+  xyz[11] = rgb.b;
+  
+  return xyz;
+}
+
 
 
 /*
