@@ -13,7 +13,7 @@
 #ifndef PalettesWLED_h
 #define PalettesWLED_h
 
-#define GRADIENT_PALETTE_COUNT 58
+#define GRADIENT_PALETTE_COUNT 60 //WLEDMM netmindz ar palette +2
 
 const byte ib_jul01_gp[] PROGMEM = {
     0, 194,  1,  1,
