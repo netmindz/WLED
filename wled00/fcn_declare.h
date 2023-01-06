@@ -308,4 +308,4 @@ void getSettingsJS(byte subPage, char* dest);
 
 #endif
 
-CRGB getCRGBForBand(int x, uint8_t *fftResult, int pal); //WLEDMM netmindz ar palette
+CRGB getCRGBForBand(int x, int pal); //WLEDMM netmindz ar palette

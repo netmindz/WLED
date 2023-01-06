@@ -441,7 +441,6 @@ class WS2812FX {
       uint8_t differs(Segment& b);
       inline uint8_t getLightCapabilities() {return _capabilities;}
       void refreshLightCapabilities();
-      uint8_t * getAudioPalette(int pal); //WLEDMM netmindz ar palette
     } segment;
 
   // segment runtime parameters
@@ -1237,6 +1236,8 @@ class WS2812FX {
       estimateCurrentAndLimitBri(void),
       load_gradient_palette(uint8_t),
       handle_palette(void);
+
+    uint8_t* getAudioPalette(int pal);
 
     uint16_t* customMappingTable = nullptr;
     uint16_t  customMappingSize  = 0;

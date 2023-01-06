@@ -68,7 +68,8 @@ uint8_t extractModeName(uint8_t mode, const char *src, char *dest, uint8_t maxLe
 }
 
 
-CRGB getCRGBForBand(int x, uint8_t *fftResult, int pal) { 
+CRGB getCRGBForBand(int x, int pal) { 
+  extern int fftResult[];                         // summary of bins array. 16 summary bins.
   CRGB value;
   CHSV hsv;
   if(pal == 71) { // bit hacky to use palette id here, but don't want to litter the code with lots of different methods. TODO: add enum for palette creation type
