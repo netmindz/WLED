@@ -1337,7 +1337,8 @@ void WS2812FX::handle_palette(void)
       targetPalette = RainbowStripeColors_p; break;
     case 71: //WLEDMM netmindz ar palette +1
     case 72: //WLEDMM netmindz ar palette +1
-        targetPalette.loadDynamicGradientPalette(getAudioPalette(paletteIndex)); break; 
+      targetPalette = getAudioPalette(paletteIndex);
+      break; 
     default: //progmem palettes
       load_gradient_palette(paletteIndex -13);
   }
@@ -1352,7 +1353,7 @@ void WS2812FX::handle_palette(void)
 }
 
 // WLEDMM netmindz ar palette
-uint8_t * WS2812FX::getAudioPalette(int pal) {
+CRGBPalette16 WS2812FX::getAudioPalette(int pal) {
   // https://forum.makerforums.info/t/hi-is-it-possible-to-define-a-gradient-palette-at-runtime-the-define-gradient-palette-uses-the/63339
 
   uint8_t xyz[12];  // Needs to be 4 times however many colors are being used.
@@ -1376,8 +1377,8 @@ uint8_t * WS2812FX::getAudioPalette(int pal) {
   xyz[9] = rgb.r;
   xyz[10] = rgb.g;
   xyz[11] = rgb.b;
-  
-  return xyz;
+
+  return CRGBPalette16(xyz);
 }
 
 

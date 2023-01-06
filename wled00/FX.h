@@ -1237,7 +1237,7 @@ class WS2812FX {
       load_gradient_palette(uint8_t),
       handle_palette(void);
 
-    uint8_t* getAudioPalette(int pal);
+    CRGBPalette16 getAudioPalette(int pal);
 
     uint16_t* customMappingTable = nullptr;
     uint16_t  customMappingSize  = 0;
