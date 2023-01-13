@@ -74,18 +74,18 @@ CRGB getCRGBForBand(int x, int pal) {
   CHSV hsv;
   if(pal == 71) { // bit hacky to use palette id here, but don't want to litter the code with lots of different methods. TODO: add enum for palette creation type
     if(x == 0) {
-      value = CRGB(fftResult[10]/2, fftResult[4]/2, fftResult[0]/2);
+      value = CRGB(u_int8_t(fftResult[10]/2), u_int8_t(fftResult[4]/2), u_int8_t(fftResult[0]/2));
     }
     else if(x == 255) {
-      value = CRGB(fftResult[10]/2, fftResult[0]/2, fftResult[4]/2);
+      value = CRGB(u_int8_t(fftResult[10]/2), u_int8_t(fftResult[0]/2, u_int8_t(fftResult[4]/2));
     } 
     else {
-      value = CRGB(fftResult[0]/2, fftResult[4]/2, fftResult[10]/2);
+      value = CRGB(u_int8_t(fftResult[0]/2), u_int8_t(fftResult[4]/2), u_int8_t(fftResult[10]/2));
     } 
   }
   else if(pal == 72) {
     int b = map(x, 0, 255, 0, 8); // convert palette position to lower half of freq band
-    hsv = CHSV(fftResult[b], 255, map(fftResult[b], 0, 255, 30, 255));  // pick hue
+    hsv = CHSV(u_int8_t(fftResult[b]), 255, u_int8_t(map(fftResult[b], 0, 255, 30, 255)));  // pick hue
     hsv2rgb_rainbow(hsv, value);  // convert to R,G,B
   }
   return value;
