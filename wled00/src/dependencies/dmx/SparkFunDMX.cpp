@@ -136,7 +136,8 @@ void SparkFunDMX::write(int Channel, uint8_t value) {
 
 
 
-void SparkFunDMX::update() {
+bool SparkFunDMX::update() {
+  bool dataRead = false;
   if (_READWRITE == _WRITE)
   {
     //Send DMX break
@@ -161,6 +162,7 @@ void SparkFunDMX::update() {
 		while (DMXSerial.available())
 		{
 			dmxData[currentChannel++] = DMXSerial.read();
+			dataRead = true;
 		}
 	if (currentChannel > chanSize) //Set the channel counter back to 0 if we reach the known end size of our packet
 	{
@@ -175,6 +177,7 @@ void SparkFunDMX::update() {
 	}
   }
 #endif
+  return dataRead;
 }
 
 // Function to update the DMX bus

@@ -88,6 +88,7 @@ void handleDMX() {}
 
 #if defined(WLED_ENABLE_DMX) || defined(WLED_ENABLE_DMX_INPUT)
 void initDMX() {
+ USER_PRINT("initDMX for Input");
  #ifdef ESP8266
   dmx.init(512);        // initialize with bus length
  #else
@@ -100,12 +101,15 @@ void initDMX() {}
 
 #ifdef WLED_ENABLE_DMX_INPUT
 void handleDMXInput() {
-  dmx.update();
-  uint8_t data[512] = {};
-  for(int i=0; i < 512; i++) {
-    data[i] = dmx.read(i + 1);
+  // DEBUG_PRINTLN("handleDMXInput");
+  if(dmx.update()) {
+    DEBUG_PRINTLN("handleDMXInput - DMX data");
+    uint8_t data[512] = {};
+    for(int i=0; i < 512; i++) {
+      data[i] = dmx.read(i + 1);
+    }
+    DEBUG_PRINTLN("handleDMXInput - post read");
+    handleDMXData(1, 512, data, 1, REALTIME_MODE_DMX, 0);
   }
-  handleDMXData(1, 512, data, 1, REALTIME_MODE_DMX, 0);
-  DEBUG_PRINTF("DMX channel 1 = %u\n", dmx.read(1)); // TODO: remove from final code
 }
 #endif
