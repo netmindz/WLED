@@ -531,7 +531,7 @@ class ES8388Source : public I2SSource {
       _es8388I2cWrite(0x01,0x40); // Power up Analog and lbias ... These 5 (to here) need to be done in order
       _es8388I2cWrite(0x03,0x00); // Power up ADC, Analog Input, and Mic Bias
       _es8388I2cWrite(0x04,0x3C); // ** In guide, not in working example tho. **
-      _es8388I2cWrite(0x0a,0x50); // Use Lin2/Rin2 for ADC input  
+      _es8388I2cWrite(0x0a,0x50); // Use Lin2/Rin2 for ADC input ("line-in")
       _es8388I2cWrite(0x09,0x00); // Select Analog Input PGA Gain for ADC to 0dB **
       _es8388I2cWrite(0x0c,0x0c); // I2S format, 24-bit
       _es8388I2cWrite(0x0d,0x02); // Set MCLK/LRCK ratio to 256
