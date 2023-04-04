@@ -520,7 +520,6 @@ class ES8388Source : public I2SSource {
 
     void _es8388InitAdc() {
       // This is by no means 100% figured but it's working for line-in
-      // with a little too much noise for my liking...
       // https://dl.radxa.com/rock2/docs/hw/ds/ES8388%20user%20Guide.pdf Section 10.1
       // https://docs.google.com/spreadsheets/d/1CN3MvhkcPVESuxKyx1xRYqfUit5hOdsG45St9BCUm-g/edit#gid=0 generally
       _es8388I2cBegin();
@@ -554,7 +553,6 @@ class ES8388Source : public I2SSource {
       _es8388I2cWrite(0x26,0x09); // Mixer 
       _es8388I2cWrite(0x27,0x50); // Mixer 
       _es8388I2cWrite(0x2a,0x50); // Mixer 
-      _es8388I2cWrite(0x03,0x00); // Power
     }
 
   public:
