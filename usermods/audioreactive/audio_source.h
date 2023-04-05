@@ -522,7 +522,7 @@ class ES8388Source : public I2SSource {
       // https://dl.radxa.com/rock2/docs/hw/ds/ES8388%20user%20Guide.pdf Section 10.1
       // https://docs.google.com/spreadsheets/d/1CN3MvhkcPVESuxKyx1xRYqfUit5hOdsG45St9BCUm-g/edit#gid=0 generally
       // Sets ADC to around what AudioReactive expects, and loops line-in to line-out/headphone for monitoring.
-      _es8388I2cBegin();
+      _es8388I2cBegin(); 
       _es8388I2cWrite(0x08,0x00);       // I2S to slave
       _es8388I2cWrite(0x02,0xf3);       // Power down DEM and STM
       _es8388I2cWrite(0x2b,0x80);       // Set same LRCK
@@ -534,12 +534,13 @@ class ES8388Source : public I2SSource {
       _es8388I2cWrite(0x09,0x00);       // Select Analog Input PGA Gain for ADC to 0dB (L+R)
       _es8388I2cWrite(0x10,0b01000000); // Set ADC digital volume attenuation to -32dB (left)
       _es8388I2cWrite(0x11,0b01000000); // Set ADC digital volume attenuation to -32dB (right)
-      _es8388I2cWrite(0x02,0x00);       // Power up DEM and STM
-      _es8388I2cWrite(0x02,0b01000000); // Undocumented bit for "turn on line-out amp"
       _es8388I2cWrite(0x04,0x0c);       // Turn on LOUT2 and ROUT2 power
+      _es8388I2cWrite(0x02,0b01000000); // Power up DEM and STM and undocumented bit for "turn on line-out amp"
       _es8388I2cWrite(0x26,0x09);       // Mixer - route LIN2/RIN2 to output
       _es8388I2cWrite(0x27,0b01010000); // Mixer - route LIN to left mixer, 0dB gain
       _es8388I2cWrite(0x2a,0b01010000); // Mixer - route RIN to right mixer, 0dB gain
+      _es8388I2cWrite(0x30,0b00011110); // LOUT2VOL - 0 = -45dB, 0b00011110 = +0dB
+      _es8388I2cWrite(0x31,0b00011110); // ROUT2VOL - 0 = -45dB, 0b00011110 = +0dB
     }
 
   public:
