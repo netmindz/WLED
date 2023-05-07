@@ -1,33 +1,19 @@
 #pragma once
 
-#include "wled.h"
+// workaround for https://github.com/RobTillaart/Statistic/issues/13
+namespace std {
+  float sqrtf(float x);
+}
+
 #include "Statistic.h"
 #include "elapsedMillis.h"
+#include "wled.h"
 
 /*
  * Heavily based off code from https://github.com/Diod-dev/New_Visualizer_Skeleton
  * Ported to WLED by Netmindz
  */
 
-/* WLEDMM: move usermod variables to class. 
-
-As of March 2023 this is work in progress, more variables will be moved in the future.
-See Example v2, Temperature, MPU6050 and weather and fastled (rest to be done) as examples which has been converted using the steps below:
-
-Part 1
-- remove bool enabled = false/true (now default false)
-- remove static const char _name[] and _enabled[]
-- add constructor which calls superclass (temp?): XXXUsermod(const char *name, bool enabled):Usermod(name, enabled) {} 
-- replace _enabled with "enabled"
-- remove const char PROGMEM init for  _name[] and _enabled[]
-Part 2
-- Remove bool initDone = false;
-- addToConfig: replace createNestedObject with Usermod::addToConfig(root); JsonObject top = root[FPSTR(_name)];
-- readFromConfig: replace !top.isNull and enabled with bool configComplete = Usermod::readFromConfig(root);JsonObject top = root[FPSTR(_name)];
-Part 3
-- remove unsigned long lastTime = 0; //WLEDMM
-
-*/
 const int numFFTBins = 16; // TODO: don't hard code value here
 
 class AudioReactiveAuto : public Usermod {
@@ -630,7 +616,6 @@ void printDetectedBeats(int i) {
 	}
 }
 
-// This function automatically mixes leds2 and leds3 into leds as the song's beat comes in and drops out
   void autoMusicVisualizing() {
     // A local variable to remember the last mix amount between leds2 and leds3
     static int mixAmountOld;
@@ -646,15 +631,10 @@ void printDetectedBeats(int i) {
     if (mixAmount == 0 && mixAmountOld != 0) 
       // TODO: nextLowBeatPattern(); // chooses new beat-dependent pattern
     
-    // This is where the music-visualizing patterns are written to leds2 and leds3
-    // (leds2 and leds3 are constantly being populated with animations and the blending functions decide which one we see
-    // Or if there is silence, populate leds with an ambient pattern
     if (silence) {
       // TODO: change effect to one for silence
     }
     else {
-      // If there's a constant beat, populate leds3 with a constant beat pattern
-      // TODO: make this another pattern list, and make it fade in
       if (constBeat) {
         // TOOO: select beat effect
       }
@@ -662,7 +642,7 @@ void printDetectedBeats(int i) {
         // TOOO: select non-beat effect
       }
     }
-    
+
    mixAmountOld = mixAmount;
 
   } 
