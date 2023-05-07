@@ -165,6 +165,9 @@ class AudioReactiveAuto : public Usermod {
         //Serial.println("I'm alive!");
         lastTime = millis();
       }
+
+      musicAnalytics();
+      autoMusicVisualizing();
     }
 
 
@@ -627,6 +630,42 @@ void printDetectedBeats(int i) {
 	}
 }
 
+// This function automatically mixes leds2 and leds3 into leds as the song's beat comes in and drops out
+  void autoMusicVisualizing() {
+    // A local variable to remember the last mix amount between leds2 and leds3
+    static int mixAmountOld;
+
+    // While a beat is present (mixAmount = 255), change the color palette used in non-beat pattern and change pattern in leds2
+    // "mixAmountOld != 255" is used so it only changes the color palette once
+    if (mixAmount == 255 && mixAmountOld != 255) {
+      // TODO: nextMusicWithNoBeatPattern(); // chooses new non-beat pattern
+    }
+
+    // While no beat is present (mixAmount = 0), change the beat-dependent pattern
+    // "mixAmountOld != 0" is used so it only chooses a new pattern once
+    if (mixAmount == 0 && mixAmountOld != 0) 
+      // TODO: nextLowBeatPattern(); // chooses new beat-dependent pattern
+    
+    // This is where the music-visualizing patterns are written to leds2 and leds3
+    // (leds2 and leds3 are constantly being populated with animations and the blending functions decide which one we see
+    // Or if there is silence, populate leds with an ambient pattern
+    if (silence) {
+      // TODO: change effect to one for silence
+    }
+    else {
+      // If there's a constant beat, populate leds3 with a constant beat pattern
+      // TODO: make this another pattern list, and make it fade in
+      if (constBeat) {
+        // TOOO: select beat effect
+      }
+      else {
+        // TOOO: select non-beat effect
+      }
+    }
+    
+   mixAmountOld = mixAmount;
+
+  } 
 
    //Your usermod will remain compatible as it does not need to implement all methods from the Usermod base class!
 };
