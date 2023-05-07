@@ -423,7 +423,7 @@ void fillStats() {
     uint8_t *fftResult = (uint8_t*)um_data->u_data[2];
 
 	for (int i = 0; i < numFFTBins; i++) {
-		spectrumValue[i] = fftResult[i];
+		spectrumValue[i] = fftResult[i]; // TODO: might need to scale values to match existing code expectations
   }
 
 	// reset volume variable
@@ -633,13 +633,16 @@ void printDetectedBeats(int i) {
     
     if (silence) {
       // TODO: change effect to one for silence
+      effectCurrent = FX_MODE_STATIC;
     }
     else {
       if (constBeat) {
         // TOOO: select beat effect
+        effectCurrent = FX_MODE_2DFUNKYPLANK;
       }
       else {
         // TOOO: select non-beat effect
+        effectCurrent = FX_MODE_2DGEQ;
       }
     }
 
