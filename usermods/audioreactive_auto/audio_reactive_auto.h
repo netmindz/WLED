@@ -2,8 +2,8 @@
 
 // workaround for https://github.com/RobTillaart/Statistic/issues/13
 namespace std {
-  float sqrtf(float x);
-}
+  inline float sqrtf(float n) { return __builtin_sqrtf(n); }
+};
 
 #include "Statistic.h"
 #include "elapsedMillis.h"
