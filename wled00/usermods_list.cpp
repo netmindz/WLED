@@ -209,6 +209,11 @@
 #include "../usermods/usermod_v2_fastled/usermod_v2_fastled.h"
 #endif
 
+#ifdef USERMOD_AUDIOREACTIVE_AUTO
+  #include "../usermods/audioreactive_auto/audio_reactive_auto.h"
+#endif
+
+
 void registerUsermods()
 {
 /*

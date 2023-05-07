@@ -137,6 +137,7 @@
 #define USERMOD_ID_WEATHER               91     //Usermod "usermod_v2_weather.h"
 #define USERMOD_ID_GAMES                 92     //Usermod "usermod_v2_games.h"
 #define USERMOD_ID_FASTLED               93     //Usermod "usermod_v2_fastled.h"
+#define USERMOD_ID_AUDIOREACTIVE_AUTO    94     //UserMod "audio_reactive_auto.h"
 
 //Access point behavior
 #define AP_BEHAVIOR_BOOT_NO_CONN          0     //Open AP when no connection after boot
