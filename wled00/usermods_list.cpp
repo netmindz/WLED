@@ -402,4 +402,8 @@ void registerUsermods()
   #ifdef USERMOD_FASTLED
   usermods.add(new FastledUsermod("Fastled", true));
   #endif
+
+  #ifdef USERMOD_AUDIOREACTIVE_AUTO
+  usermods.add(new AudioReactiveAuto("AudioReactiveAuto", false));
+  #endif
 }
