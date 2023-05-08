@@ -73,7 +73,7 @@ class AudioReactiveAuto : public Usermod {
     // How long has song been going on for. Useful for DJ sets that don't have silence between songs. This keeps the song data clearing every 5 mins
     elapsedMillis songDuration;
 
-    bool silence = false;
+    bool silence = true;
     // Constant beat detected variables
     bool constBeat = false;
     int maxConstBeat = 0;
@@ -168,6 +168,35 @@ class AudioReactiveAuto : public Usermod {
       JsonObject user = root["u"];
       if (user.isNull()) user = root.createNestedObject("u");
 
+      JsonArray infoArr = user.createNestedArray(FPSTR("AudioReactiveAuto"));
+
+      // String uiDomString = F("<button class=\"btn btn-xs\" onclick=\"requestJson({");
+      // uiDomString += FPSTR(_name);
+      // uiDomString += F(":{");
+      // uiDomString += FPSTR(enabled);
+      // uiDomString += enabled ? F(":false}});\">") : F(":true}});\">");
+      // uiDomString += F("<i class=\"icons");
+      // uiDomString += enabled ? F(" on") : F(" off");
+      // uiDomString += F("\">&#xe08f;</i>");
+      // uiDomString += F("</button>");
+      // infoArr.add(uiDomString);
+
+      if (enabled) {
+        if(silence) {
+          infoArr.add("Silence");
+        }
+        else {
+          if(constBeat) {
+            infoArr.add("Constant Beat");
+          }
+          else {
+            infoArr.add("Non-Constant Beat");
+          }
+        }
+      }
+      else {
+        infoArr.add("ARA Disabled");
+      }
       //this code adds "u":{"ExampleUsermod":[20," lux"]} to the info object
       //int reading = 20;
       //JsonArray lightArr = user.createNestedArray(FPSTR(_name))); //name
@@ -415,12 +444,12 @@ void fillStats() {
 	for (int i = 0; i < numFFTBins; i++) {
 		spectrumValueOld[i] = spectrumValue[i];
   }
-    um_data_t *um_data;
-    if (!usermods.getUMData(&um_data, USERMOD_ID_AUDIOREACTIVE)) {
-      // add support for no audio
-      um_data = simulateSound(SEGMENT.soundSim);
-    }
-    uint8_t *fftResult = (uint8_t*)um_data->u_data[2];
+  um_data_t *um_data;
+  if (!usermods.getUMData(&um_data, USERMOD_ID_AUDIOREACTIVE)) {
+    // add support for no audio
+    um_data = simulateSound(SEGMENT.soundSim);
+  }
+  uint8_t *fftResult = (uint8_t*)um_data->u_data[2];
 
 	for (int i = 0; i < numFFTBins; i++) {
 		spectrumValue[i] = fftResult[i]; // TODO: might need to scale values to match existing code expectations
@@ -542,41 +571,41 @@ void musicAnalytics() {
 		fadeVals[i] = constrain(fadeVals[i], 0, 255);
 	}
 
-	// This for loop checks the lowest 4 bins, mid 4 bins, high 4 bins. (Some bins are not counted b/c they're in between. Might need fixing)
-	for (int i = 0; i < 4; i++) {
-		// Find the beats in the low, mid, and high ranges
-		if (binScore[i] > binScore[lowBeatBin])
-			lowBeatBin = i;
-		if (binScore[i + 5] > binScore[midBeatBin]) // binScore[4] is not measured
-			midBeatBin = i + 5;
-		if (binScore[i + 9] > binScore[highBeatBin])
-			highBeatBin = i + 9;
+	// // This for loop checks the lowest 4 bins, mid 4 bins, high 4 bins. (Some bins are not counted b/c they're in between. Might need fixing)
+	// for (int i = 0; i < 4; i++) {
+	// 	// Find the beats in the low, mid, and high ranges
+	// 	if (binScore[i] > binScore[lowBeatBin])
+	// 		lowBeatBin = i;
+	// 	if (binScore[i + 5] > binScore[midBeatBin]) // binScore[4] is not measured
+	// 		midBeatBin = i + 5;
+	// 	if (binScore[i + 9] > binScore[highBeatBin])
+	// 		highBeatBin = i + 9;
 
-		// Find highest averages in the low, mid, and high ranges
-		if (average[i] > average[lowAveBin])
-			lowAveBin = i;
-		if (average[i + 5] > average[midAveBin])
-			midAveBin = i + 5;
-		if (average[i + 9] > average[highAveBin])
-			highAveBin = i + 9;
-	}
+	// 	// Find highest averages in the low, mid, and high ranges
+	// 	if (average[i] > average[lowAveBin])
+	// 		lowAveBin = i;
+	// 	if (average[i + 5] > average[midAveBin])
+	// 		midAveBin = i + 5;
+	// 	if (average[i + 9] > average[highAveBin])
+	// 		highAveBin = i + 9;
+	// }
 
-	// This local variable is what moves the mixAmount variable
-	static int mixAmountInfluencer;
+	// // This local variable is what moves the mixAmount variable
+	// static int mixAmountInfluencer;
 
-	// If a beat is detected or there's currently a constant beat over 8 counts, increase mixAmount
-	if (beatDetected[lowBeatBin] == 2 || constantBeatCounter[lowBeatBin] > 8)
-		mixAmountInfluencer += 5;
+	// // If a beat is detected or there's currently a constant beat over 8 counts, increase mixAmount
+	// if (beatDetected[lowBeatBin] == 2 || constantBeatCounter[lowBeatBin] > 8)
+	// 	mixAmountInfluencer += 5;
 
-	// Otherwise, it is constantly decreasing
-	EVERY_N_MILLIS(150)
-		mixAmountInfluencer -= 1;
+	// // Otherwise, it is constantly decreasing
+	// EVERY_N_MILLIS(150)
+	// 	mixAmountInfluencer -= 1;
 
-	mixAmountInfluencer = constrain(mixAmountInfluencer, -10, 10);
-	mixAmount = constrain(mixAmount + mixAmountInfluencer, 0, 255);
-	//Serial.print(mixAmountInfluencer);
-	//Serial.print("\t");
-	//Serial.println(mixAmount);
+	// mixAmountInfluencer = constrain(mixAmountInfluencer, -10, 10);
+	// mixAmount = constrain(mixAmount + mixAmountInfluencer, 0, 255);
+	// //Serial.print(mixAmountInfluencer);
+	// //Serial.print("\t");
+	// //Serial.println(mixAmount);
 }
 
 void printBeatBins() {

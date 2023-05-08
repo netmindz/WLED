@@ -404,6 +404,6 @@ void registerUsermods()
   #endif
 
   #ifdef USERMOD_AUDIOREACTIVE_AUTO
-  usermods.add(new AudioReactiveAuto("AudioReactiveAuto", false));
+  usermods.add(new AudioReactiveAuto("Audio-Reactive-Auto", false));
   #endif
 }
