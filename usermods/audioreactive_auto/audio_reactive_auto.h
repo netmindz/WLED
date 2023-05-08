@@ -665,23 +665,35 @@ void printDetectedBeats(int i) {
 
     // While no beat is present (mixAmount = 0), change the beat-dependent pattern
     // "mixAmountOld != 0" is used so it only chooses a new pattern once
-    if (mixAmount == 0 && mixAmountOld != 0) 
+    if (mixAmount == 0 && mixAmountOld != 0) {
       // TODO: nextLowBeatPattern(); // chooses new beat-dependent pattern
+    }
     
+    int effectNew = 0;
     if (silence) {
       // TODO: change effect to one for silence
-      effectCurrent = FX_MODE_STATIC;
+      effectNew = FX_MODE_STATIC;
     }
     else {
       if (constBeat) {
         // TOOO: select beat effect
-        effectCurrent = FX_MODE_2DFUNKYPLANK;
+        effectNew = FX_MODE_2DFUNKYPLANK;
       }
       else {
         // TOOO: select non-beat effect
-        effectCurrent = FX_MODE_2DGEQ;
+        effectNew = FX_MODE_2DGEQ;
       }
     }
+    if(effectCurrent != effectNew) {
+      DEBUG_PRINTF("ARA: Changed effect to %u\n", effectNew);
+      effectCurrent = effectNew;
+      colorUpdated(CALL_MODE_NO_NOTIFY);
+//      stateUpdated(CALL_MODE_DIRECT_CHANGE);
+    }
+    else {
+      // DEBUG_PRINTF("ARA: effect current %u\n", effectCurrent);
+    }
+    // applyPreset(effectNew);
 
    mixAmountOld = mixAmount;
 
