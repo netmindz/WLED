@@ -128,6 +128,7 @@ class AudioReactiveAuto : public Usermod {
       // do your set-up here
       //Serial.println("Hello from my usermod!");
       initDone = true;
+      clearStats();
     }
 
 
@@ -571,41 +572,48 @@ void musicAnalytics() {
 		fadeVals[i] = constrain(fadeVals[i], 0, 255);
 	}
 
-	// // This for loop checks the lowest 4 bins, mid 4 bins, high 4 bins. (Some bins are not counted b/c they're in between. Might need fixing)
-	// for (int i = 0; i < 4; i++) {
-	// 	// Find the beats in the low, mid, and high ranges
-	// 	if (binScore[i] > binScore[lowBeatBin])
-	// 		lowBeatBin = i;
-	// 	if (binScore[i + 5] > binScore[midBeatBin]) // binScore[4] is not measured
-	// 		midBeatBin = i + 5;
-	// 	if (binScore[i + 9] > binScore[highBeatBin])
-	// 		highBeatBin = i + 9;
+	// This for loop checks the lowest 4 bins, mid 4 bins, high 4 bins. (Some bins are not counted b/c they're in between. Might need fixing)
+	for (int i = 0; i < 4; i++) {
+		// Find the beats in the low, mid, and high ranges
+		if (binScore[i] > binScore[lowBeatBin]) {
+      lowBeatBin = i;
+    }
+    // binScore[4] is not measured
+		if (binScore[i + 5] > binScore[midBeatBin]) {
+      midBeatBin = i + 5;
+    }
+		if (binScore[i + 9] > binScore[highBeatBin]) {
+      highBeatBin = i + 9;
+    }
 
-	// 	// Find highest averages in the low, mid, and high ranges
-	// 	if (average[i] > average[lowAveBin])
-	// 		lowAveBin = i;
-	// 	if (average[i + 5] > average[midAveBin])
-	// 		midAveBin = i + 5;
-	// 	if (average[i + 9] > average[highAveBin])
-	// 		highAveBin = i + 9;
-	// }
+		// // Find highest averages in the low, mid, and high ranges
+		// if (average[i] > average[lowAveBin]) {
+    //   lowAveBin = i;
+    // }
+		// if (average[i + 5] > average[midAveBin]) {
+    //   midAveBin = i + 5;
+    // }
+		// if (average[i + 9] > average[highAveBin]) {
+    //   highAveBin = i + 9;
+    // }
+	}
 
-	// // This local variable is what moves the mixAmount variable
-	// static int mixAmountInfluencer;
+	// This local variable is what moves the mixAmount variable
+	static int mixAmountInfluencer;
 
-	// // If a beat is detected or there's currently a constant beat over 8 counts, increase mixAmount
-	// if (beatDetected[lowBeatBin] == 2 || constantBeatCounter[lowBeatBin] > 8)
-	// 	mixAmountInfluencer += 5;
+	// If a beat is detected or there's currently a constant beat over 8 counts, increase mixAmount
+	if (beatDetected[lowBeatBin] == 2 || constantBeatCounter[lowBeatBin] > 8)
+		mixAmountInfluencer += 5;
 
-	// // Otherwise, it is constantly decreasing
-	// EVERY_N_MILLIS(150)
-	// 	mixAmountInfluencer -= 1;
+	// Otherwise, it is constantly decreasing
+	EVERY_N_MILLIS(150)
+		mixAmountInfluencer -= 1;
 
-	// mixAmountInfluencer = constrain(mixAmountInfluencer, -10, 10);
-	// mixAmount = constrain(mixAmount + mixAmountInfluencer, 0, 255);
-	// //Serial.print(mixAmountInfluencer);
-	// //Serial.print("\t");
-	// //Serial.println(mixAmount);
+	mixAmountInfluencer = constrain(mixAmountInfluencer, -10, 10);
+	mixAmount = constrain(mixAmount + mixAmountInfluencer, 0, 255);
+	//Serial.print(mixAmountInfluencer);
+	//Serial.print("\t");
+	//Serial.println(mixAmount);
 }
 
 void printBeatBins() {
