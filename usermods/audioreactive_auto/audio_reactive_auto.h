@@ -511,18 +511,26 @@ void beatDetection(int i) {
 	// 1 = old beat hasn't dropped / reset yet
 	// 2 = new beat detected
 	// Peak detection is performed here. FFT value must be greater than the average+(2.3*st.dev) and greater than a threshold of 100, which is pretty quiet
+  // EVERY_N_MILLIS(100) {
+    DEBUG_PRINTF("band=%u\tspectrumValue=%u\taverage=%u\tstDev=%u\n", i, spectrumValue[i],  average[i] , stDev[i] );
+  // }
 	if (spectrumValue[i] > average[i] + 2.3 * stDev[i] && spectrumValue[i] > 100) {
-		if (beatDetected[i] == 2) // If it's already 2, then the beat has already been detected...
+		if (beatDetected[i] == 2) {// If it's already 2, then the beat has already been detected...
 			beatDetected[i] = 1; // so drop the value to 1.
-		if (beatDetected[i] == 0) // If 0, then this is a new beat...
+      DEBUG_PRINTLN("StillBEAT" + i);
+    }
+		if (beatDetected[i] == 0) { // If 0, then this is a new beat...
 			beatDetected[i] = 2; // so make the value 2.
+      DEBUG_PRINTLN("BEAT " + i);
+    }
 		// if it's == 1, it stays 1. no code is needed.
 	}
 	// This is where 1's get reset to 0. This prevents multiple beats being triggered from 1 beat, or when they aren't well defined
 	else { // if beat is not detected...
 		if (beatDetected[i] == 1) { // and it's value is 1...
-			if (spectrumValue[i] <= average[i]) // and it has dropped below the running average of that FFT bin...
+			if (spectrumValue[i] <= average[i]) {// and it has dropped below the running average of that FFT bin...
 				beatDetected[i] = 0; // reset to 0
+      }
 		}
 	}
 }
