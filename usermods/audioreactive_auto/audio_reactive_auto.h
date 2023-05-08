@@ -67,7 +67,7 @@ class AudioReactiveAuto : public Usermod {
     // Which FFT bins in the low frequencies, mid frequencies, and high frequencies have the the strongest beats within the song.
     int lowBeatBin, midBeatBin, highBeatBin;
     // Which FFT bins in the low frequencies, mid frequencies, and high frequencies have the highest averages
-    int lowAveBin, midAveBin, highAveBin;
+    // int lowAveBin, midAveBin, highAveBin;
     // How long has silence been detected
     elapsedMillis silenceDuration;
     // How long has song been going on for. Useful for DJ sets that don't have silence between songs. This keeps the song data clearing every 5 mins
@@ -586,8 +586,8 @@ void musicAnalytics() {
       highBeatBin = i + 9;
     }
 
-		// // Find highest averages in the low, mid, and high ranges
-		// if (average[i] > average[lowAveBin]) {
+		// Find highest averages in the low, mid, and high ranges
+    // if (average[i] > average[lowAveBin]) {
     //   lowAveBin = i;
     // }
 		// if (average[i + 5] > average[midAveBin]) {
