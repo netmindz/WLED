@@ -93,11 +93,37 @@ void initDMX() {
 void handleDMX() {}
 #endif
 
-
+#define WLED_ENABLE_DMX_INPUT
 #ifdef WLED_ENABLE_DMX_INPUT
 
 #include <esp_dmx.h>
+#include "rdm/mdb.h"
 
+// Define a custom response to RDM_PID_SOFTWARE_VERSION_LABEL
+rdm_response_type_t rdm_software_version_label(dmx_port_t dmx_num,
+                                               const rdm_header_t *header,
+                                               rdm_mdb_t *mdb, void *context) {
+  // Log the request for testing purposes only
+  ESP_LOGI(TAG, "Received RDM_PID_SOFTWARE_VERSION_LABEL request");
+
+  // Ensure that the parameter data is the expected length
+  if (mdb->pdl != 0) {
+    rdm_encode_nack_reason(mdb, RDM_NR_FORMAT_ERROR);
+    return RDM_RESPONSE_TYPE_NACK_REASON;
+  }
+
+  // Ensure that the CC is correct
+  if (header->cc != RDM_CC_GET_COMMAND) {
+    // RDM_PID_SOFTWARE_VERSION_LABEL only supports GET requests
+    rdm_encode_nack_reason(mdb, RDM_NR_UNSUPPORTED_COMMAND_CLASS);
+    return RDM_RESPONSE_TYPE_NACK_REASON;
+  }
+
+  // Encode the response
+  const char *sw_version_label = (const char *)context;
+  rdm_encode_string(mdb, sw_version_label, strlen(sw_version_label));
+  return RDM_RESPONSE_TYPE_ACK;
+}
 
 dmx_port_t dmxPort = 2;
 void initDMX() {
@@ -116,6 +142,26 @@ void initDMX() {
     priority to use, you can use the macro `DMX_DEFAULT_INTR_FLAG` to set the
     interrupt to its default settings.*/
   dmx_driver_install(dmxPort, ESP_INTR_FLAG_LEVEL3);
+
+  // Set the device info for this device driver
+  const rdm_device_info_t device_info = {
+      .model_id = 1,  // An arbitrary value defined by the user
+      .product_category = RDM_PRODUCT_CATEGORY_FIXTURE,
+      .software_version_id = VERSION,  // An arbitrary value defined by the user
+      .footprint = 1,
+      .current_personality = 1,  // Begins at 1, not 0
+      .personality_count = 1,
+      .start_address = DMXAddress,
+      .sub_device_count = 0,
+      .sensor_count = 0};
+  rdm_driver_set_device_info(dmxPort, &device_info);
+
+  /* Register the custom callback. This overwrites the default
+    RDM_PID_SOFTWARE_VERSION_LABEL response. */
+  const char *sw_version_label = "WLED";
+  rdm_register_callback(dmxPort, RDM_PID_SOFTWARE_VERSION_LABEL,
+                        rdm_software_version_label, (void *)sw_version_label);
+
 }
   
 bool dmxIsConnected = false;
