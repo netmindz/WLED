@@ -419,7 +419,7 @@ bool deserializeState(JsonObject root, byte callMode, byte presetId)
     if (presetsModifiedTime == 0) presetsModifiedTime = timein;
   }
 
-  doReboot = root[F("rb")] | doReboot;
+  if (root[F("psave")].isNull()) doReboot = root[F("rb")] | doReboot;
 
   // do not allow changing main segment while in realtime mode (may get odd results else)
   if (!realtimeMode) strip.setMainSegmentId(root[F("mainseg")] | strip.getMainSegmentId()); // must be before realtimeLock() if "live"
@@ -514,6 +514,15 @@ bool deserializeState(JsonObject root, byte callMode, byte presetId)
     //do not notify here, because the first playlist entry will do
     if (root["on"].isNull()) callMode = CALL_MODE_NO_NOTIFY;
     else callMode = CALL_MODE_DIRECT_CHANGE;  // possible bugfix for playlist only containing HTTP API preset FX=~
+  }
+
+  if (root.containsKey(F("rmcpal")) && root[F("rmcpal")].as<bool>()) {
+    if (strip.customPalettes.size()) {
+      char fileName[32];
+      sprintf_P(fileName, PSTR("/palette%d.json"), strip.customPalettes.size()-1);
+      if (WLED_FS.exists(fileName)) WLED_FS.remove(fileName);
+      strip.loadCustomPalettes();
+    }
   }
 
   stateUpdated(callMode);
@@ -898,7 +907,6 @@ void serializeInfo(JsonObject root)
   #endif
   root[F("lwip")] = 0; //deprecated
   root[F("totalheap")] = ESP.getHeapSize(); //WLEDMM
-  root[F("getflash")] = ESP.getFlashChipSize(); //WLEDMM and Athom
   #else
   root[F("arch")] = "esp8266";
   root[F("core")] = ESP.getCoreVersion();
@@ -908,13 +916,14 @@ void serializeInfo(JsonObject root)
   #endif
   root[F("lwip")] = LWIP_VERSION_MAJOR;
   #endif
+  root[F("getflash")] = ESP.getFlashChipSize(); //WLEDMM and Athom, works for both ESP32 and ESP8266
 
   root[F("freeheap")] = ESP.getFreeHeap();
   //WLEDMM: conditional on esp32
   #if defined(ARDUINO_ARCH_ESP32)
     root[F("minfreeheap")] = ESP.getMinFreeHeap();
   #endif
-  #if defined(ARDUINO_ARCH_ESP32) && defined(WLED_USE_PSRAM) && defined(BOARD_HAS_PSRAM)
+  #if defined(ARDUINO_ARCH_ESP32) && defined(BOARD_HAS_PSRAM)
   if (psramFound()) {
     root[F("tpram")] = ESP.getPsramSize(); //WLEDMM
     root[F("psram")] = ESP.getFreePsram();
@@ -975,7 +984,7 @@ void serializeInfo(JsonObject root)
   #endif
   #if defined(WLED_DEBUG) || defined(WLED_DEBUG_HOST) || defined(SR_DEBUG) || defined(SR_STATS)
   // WLEDMM add status of Serial, incuding pin alloc
-  root[F("serialOnline")] = Serial ? (canUseSerial()?F("Serial ready"):F("Serial in use")) : F("Serial disconected");  // "Disconnected" may happen on boards with USB CDC
+  root[F("serialOnline")] = Serial ? (canUseSerial()?F("Serial ready ☾"):F("Serial in use ☾")) : F("Serial disconected ☾");  // "Disconnected" may happen on boards with USB CDC
   root[F("sRX")] = pinManager.isPinAllocated(hardwareRX) ? pinManager.getPinOwnerText(hardwareRX): F("free");
   root[F("sTX")] = pinManager.isPinAllocated(hardwareTX) ? pinManager.getPinOwnerText(hardwareTX): F("free");
   #endif
@@ -1072,7 +1081,7 @@ void setPaletteColors(JsonArray json, byte* tcp)
 
 void serializePalettes(JsonObject root, AsyncWebServerRequest* request)
 {
-  byte tcp[72];
+  byte tcp[72 +4] = { 255 }; // WLEDMM bugfix - use extra element as "stop" marker (=255) for setPaletteColors(). And no, I won't cry over 4 bytes wasted ;-)
   #ifdef ESP8266
   int itemPerPage = 5;
   #else
@@ -1173,7 +1182,16 @@ void serializePalettes(JsonObject root, AsyncWebServerRequest* request)
         if (i>=palettesCount) {
           setPaletteColors(curPalette, strip.customPalettes[i - palettesCount]);
         } else {
-          memcpy_P(tcp, (byte*)pgm_read_dword(&(gGradientPalettes[i - 13])), 72);
+          // WLEDMM workaround for palettes index overflow at i=74 -> gGradientPalettes index=61 out of bounds.
+          int palIndex = i-13;
+          constexpr int palMax = sizeof(gGradientPalettes)/sizeof(gGradientPalettes[0]) -1;
+          if ((palIndex < 0) || (palIndex > palMax)) { 
+            DEBUG_PRINTF("WARNING gGradientPalettes[%d] is out of bounds! max=%d. (json.cpp)\n", palIndex, palMax);
+            palIndex = palMax;  // use last valid array item
+          }
+          memset(tcp, 255, sizeof(tcp));  // WLEDMM pre-fill buffer with dummy values, to avoid array overrun in setPaletteColors in case of "unterminated" palette entry
+          // WLEDMM end
+          memcpy_P(tcp, (byte*)pgm_read_dword(&(gGradientPalettes[palIndex])), 72);
           setPaletteColors(curPalette, tcp);
         }
         }

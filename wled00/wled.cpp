@@ -211,6 +211,8 @@ void WLED::loop()
   //LED settings have been saved, re-init busses
   //This code block causes severe FPS drop on ESP32 with the original "if (busConfigs[0] != nullptr)" conditional. Investigate!
   if (doInitBusses) {
+    unsigned long waitStart = millis();                                             // WLEDMM: to avoid crash,
+    while (strip.isUpdating() && (millis() - waitStart < 250)) {yield(); delay(5);} // wait a bit until busses are idle (max 250ms)
     doInitBusses = false;
     DEBUG_PRINTLN(F("Re-init busses."));
     bool aligned = strip.checkSegmentAlignment(); //see if old segments match old bus(ses)
@@ -254,7 +256,7 @@ void WLED::loop()
 	#ifdef ARDUINO_ARCH_ESP32
     DEBUG_PRINTF("%s min free stack %d\n", pcTaskGetTaskName(NULL), uxTaskGetStackHighWaterMark(NULL)); //WLEDMM
 	#endif
-    #if defined(ARDUINO_ARCH_ESP32) && defined(WLED_USE_PSRAM)
+    #if defined(ARDUINO_ARCH_ESP32) && defined(BOARD_HAS_PSRAM)
     if (psramFound()) {
       //DEBUG_PRINT(F("Total PSRAM: "));    DEBUG_PRINT(ESP.getPsramSize()/1024); DEBUG_PRINTLN("kB");
       DEBUG_PRINT(F("Free PSRAM:  "));     DEBUG_PRINT(ESP.getFreePsram()/1024); DEBUG_PRINTLN("kB");
@@ -343,27 +345,29 @@ void WLED::setup()
   Serial.begin(115200);
   if (!Serial) delay(1000); // WLEDMM make sure that Serial has initalized
 
-  #if !ARDUINO_USB_CDC_ON_BOOT
-  Serial.setTimeout(50);  // this causes troubles on new MCUs that have a "virtual" USB Serial (HWCDC)
-  #else
-  #endif
-  #if defined(WLED_DEBUG) && defined(ARDUINO_ARCH_ESP32) && (defined(CONFIG_IDF_TARGET_ESP32S2) || defined(CONFIG_IDF_TARGET_ESP32C3) || ARDUINO_USB_CDC_ON_BOOT)
+  #ifdef ARDUINO_ARCH_ESP32
+  #if defined(WLED_DEBUG) && (defined(CONFIG_IDF_TARGET_ESP32S2) || defined(CONFIG_IDF_TARGET_ESP32C3) || ARDUINO_USB_CDC_ON_BOOT)
   if (!Serial) delay(2500);  // WLEDMM allow CDC USB serial to initialise
   #endif
-
-  #if ARDUINO_USB_CDC_ON_BOOT
+  #if ARDUINO_USB_CDC_ON_BOOT || ARDUINO_USB_MODE
   if (!Serial) delay(2500);  // WLEDMM: always allow CDC USB serial to initialise
-  Serial.println("wait 1");  // waiting a bit longer ensures that a  debug messages are shown in serial monitor
+  if (Serial) Serial.println("wait 1");  // waiting a bit longer ensures that a  debug messages are shown in serial monitor
   if (!Serial) delay(2500);
-  Serial.println("wait 2");
+  if (Serial) Serial.println("wait 2");
   if (!Serial) delay(2500);
 
   if (Serial) Serial.flush(); // WLEDMM
-  Serial.setTimeout(350); // WLEDMM: don't change timeout, as it causes crashes later
+  //Serial.setTimeout(350); // WLEDMM: don't change timeout, as it causes crashes later
   // WLEDMM: redirect debug output to HWCDC
+  #if ARDUINO_USB_CDC_ON_BOOT && (defined(WLED_DEBUG) || defined(SR_DEBUG))
   Serial0.setDebugOutput(false);
   Serial.setDebugOutput(true);
-  #else
+  #endif
+  // WLEDMM don't touch serial timeout when we use CDC USB or tinyUSB
+  #else // "standard" serial-to-USB chip
+  if (Serial) Serial.setTimeout(50);  // WLEDMM - only when serial is initialized
+  #endif
+  #else  // 8266
   if (Serial) Serial.setTimeout(50);  // WLEDMM - only when serial is initialized
   #endif
 
@@ -466,7 +470,8 @@ void WLED::setup()
   DEBUG_PRINTF("%s min free stack %d\n", pcTaskGetTaskName(NULL), uxTaskGetStackHighWaterMark(NULL)); //WLEDMM
 #endif
 
-  #if defined(ARDUINO_ARCH_ESP32) && defined(WLED_USE_PSRAM)
+  #if defined(ARDUINO_ARCH_ESP32) && defined(BOARD_HAS_PSRAM)
+  psramInit();
   if (psramFound()) {
 #if !defined(CONFIG_IDF_TARGET_ESP32C3) && !defined(CONFIG_IDF_TARGET_ESP32S2) && !defined(CONFIG_IDF_TARGET_ESP32S3)
     // GPIO16/GPIO17 reserved for SPI RAM
@@ -483,7 +488,7 @@ void WLED::setup()
       DEBUG_PRINTLN(F("No PSRAM found."));
   #endif
   #if defined(ARDUINO_ARCH_ESP32) && defined(BOARD_HAS_PSRAM) && !defined(WLED_USE_PSRAM)
-      DEBUG_PRINTLN(F("PSRAM not used."));
+      DEBUG_PRINTLN(F("PSRAM not used for LEDs."));
   #endif
 
   //DEBUG_PRINT(F("LEDs inited. heap usage ~"));
@@ -587,7 +592,7 @@ void WLED::setup()
   //Serial RX (Adalight, Improv, Serial JSON) only possible if GPIO3 unused
   //Serial TX (Debug, Improv, Serial JSON) only possible if GPIO1 unused
   if (!pinManager.isPinAllocated(hardwareRX) && !pinManager.isPinAllocated(hardwareTX)) {
-    Serial.println(F("Ada"));
+    if (Serial) Serial.println(F("Ada"));
   }
   #endif
 
@@ -599,7 +604,7 @@ void WLED::setup()
 #endif
 
 #ifdef WLED_ENABLE_ADALIGHT
-  if (Serial.available() > 0 && Serial.peek() == 'I') handleImprovPacket();
+  if (Serial && (Serial.available() > 0) && (Serial.peek() == 'I')) handleImprovPacket();
 #endif
 
   strip.service(); // why?
@@ -626,7 +631,7 @@ void WLED::setup()
 #endif
 
 #ifdef WLED_ENABLE_ADALIGHT
-  if (Serial.available() > 0 && Serial.peek() == 'I') handleImprovPacket();
+  if (Serial && (Serial.available() > 0) && (Serial.peek() == 'I')) handleImprovPacket();
 #endif
 
   // HTTP server page init
@@ -704,7 +709,7 @@ void WLED::setup()
   // repeat Ada prompt
   #ifdef WLED_ENABLE_ADALIGHT
   if (!pinManager.isPinAllocated(hardwareRX) && !pinManager.isPinAllocated(hardwareTX)) {
-    Serial.println(F("Ada"));
+    if (Serial) Serial.println(F("Ada"));
   }
   #endif
 
@@ -748,11 +753,10 @@ void WLED::initAP(bool resetAP)
   USER_PRINT(F("Opening access point "));  // WLEDMM
   USER_PRINTLN(apSSID);                    // WLEDMM
   WiFi.softAPConfig(IPAddress(4, 3, 2, 1), IPAddress(4, 3, 2, 1), IPAddress(255, 255, 255, 0));
-  if (!WiFi.softAP(apSSID, apPass, apChannel, apHide)) {   // WLEDMM softAp() will return true in case of success and false in case of failure.
-    USER_PRINTLN(F("Access point creation failed."));
-    apActive = false;
-    return;
-  }
+  WiFi.softAP(apSSID, apPass, apChannel, apHide);
+  #if defined(LOLIN_WIFI_FIX) && (defined(ARDUINO_ARCH_ESP32C3) || defined(ARDUINO_ARCH_ESP32S2))
+  WiFi.setTxPower(WIFI_POWER_8_5dBm);
+  #endif
 
   if (!apActive) // start captive portal if AP active
   {
@@ -836,6 +840,24 @@ bool WLED::initEthernet()
     return false;
   }
 
+   /*
+  For LAN8720 the most correct way is to perform clean reset each time before init
+  applying LOW to power or nRST pin for at least 100 us (please refer to datasheet, page 59)
+  ESP_IDF > V4 implements it (150 us, lan87xx_reset_hw(esp_eth_phy_t *phy) function in 
+  /components/esp_eth/src/esp_eth_phy_lan87xx.c, line 280)
+  but ESP_IDF < V4 does not. Lets do it:
+  [not always needed, might be relevant in some EMI situations at startup and for hot resets]
+  */
+  #if ESP_IDF_VERSION_MAJOR==3
+  if(es.eth_power>0 && es.eth_type==ETH_PHY_LAN8720) {
+    pinMode(es.eth_power, OUTPUT);
+    digitalWrite(es.eth_power, 0);
+    delayMicroseconds(150);
+    digitalWrite(es.eth_power, 1);
+    delayMicroseconds(10);
+  }
+  #endif
+
   if (!ETH.begin(
                 (uint8_t) es.eth_address,
                 (int)     es.eth_power,
@@ -914,12 +936,10 @@ void WLED::initConnection()
 #endif
 
   WiFi.begin(clientSSID, clientPass);
-
 #ifdef ARDUINO_ARCH_ESP32
-#ifdef WLEDMM_WIFI_POWERON_HACK
-  // WLEDMM - if your board has issues connecting to WiFi, try this
-  WiFi.setTxPower(WIFI_POWER_5dBm);  // required for ESP32-C3FH4-RGB
-#endif
+  #if defined(LOLIN_WIFI_FIX) && (defined(ARDUINO_ARCH_ESP32C3) || defined(ARDUINO_ARCH_ESP32S2))
+  WiFi.setTxPower(WIFI_POWER_8_5dBm);
+  #endif
   WiFi.setSleep(!noWifiSleep);
   WiFi.setHostname(hostname);
 #else
@@ -956,10 +976,10 @@ void WLED::initInterfaces()
         #endif
       #endif
     } else {
-      IPAddress ipAddress = Network.localIP();
-      netDebugPrintIP[0] = ipAddress[0];
-      netDebugPrintIP[1] = ipAddress[1];
-      netDebugPrintIP[2] = ipAddress[2];
+      IPAddress ndIpAddress = Network.localIP();
+      netDebugPrintIP[0] = ndIpAddress[0];
+      netDebugPrintIP[1] = ndIpAddress[1];
+      netDebugPrintIP[2] = ndIpAddress[2];
     }
   }
   if (netDebugPrintPort == 0) 

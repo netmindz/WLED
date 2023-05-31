@@ -189,7 +189,7 @@ void realtimeLock(uint32_t timeoutMs, byte md)
 void exitRealtime() {
   if (!realtimeMode) return;
   if (realtimeOverride == REALTIME_OVERRIDE_ONCE) realtimeOverride = REALTIME_OVERRIDE_NONE;
-  strip.setBrightness(scaledBri(bri));
+  strip.setBrightness(scaledBri(bri), true);
   realtimeTimeout = 0; // cancel realtime mode immediately
   realtimeMode = REALTIME_MODE_INACTIVE; // inform UI immediately
   realtimeIP[0] = 0;
@@ -771,7 +771,7 @@ uint8_t realtimeBroadcast(uint8_t type, IPAddress client, uint16_t length, uint8
 
         // write the colors, the write write(const uint8_t *buffer, size_t size)
         // function is just a loop internally too
-        for (size_t i = 0; i < packetSize; i += 3) {
+        for (size_t i = 0; i < packetSize; i += (isRGBW?4:3)) {
           ddpUdp.write(scale8(buffer[bufferOffset++], bri)); // R
           ddpUdp.write(scale8(buffer[bufferOffset++], bri)); // G
           ddpUdp.write(scale8(buffer[bufferOffset++], bri)); // B
@@ -821,9 +821,9 @@ uint8_t realtimeBroadcast(uint8_t type, IPAddress client, uint16_t length, uint8
           }
         }
 
-        byte buffer[ART_NET_HEADER_SIZE];
-        memcpy_P(buffer, ART_NET_HEADER, ART_NET_HEADER_SIZE);
-        ddpUdp.write(buffer, ART_NET_HEADER_SIZE); // This doesn't change. Hard coded ID, OpCode, and protocol version.
+        byte header_buffer[ART_NET_HEADER_SIZE];
+        memcpy_P(header_buffer, ART_NET_HEADER, ART_NET_HEADER_SIZE);
+        ddpUdp.write(header_buffer, ART_NET_HEADER_SIZE); // This doesn't change. Hard coded ID, OpCode, and protocol version.
         ddpUdp.write(sequenceNumber & 0xFF); // sequence number. 1..255
         ddpUdp.write(0x00); // physical - more an FYI, not really used for anything. 0..3
         ddpUdp.write((currentPacket) & 0xFF); // Universe LSB. 1 full packet == 1 full universe, so just use current packet number.

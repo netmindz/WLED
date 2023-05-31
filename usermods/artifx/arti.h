@@ -55,7 +55,14 @@
   #define ARTI_PRINT 1 //will show the printf calls
 
   const char spaces[51] PROGMEM = "                                                  ";
-  #define FREE_SIZE esp_get_free_heap_size()
+  #if defined(ARDUINO_ARCH_ESP32)
+    #define FREE_SIZE esp_get_free_heap_size()
+    #define asChar(x) x.as<std::string>().c_str() //WLEDMM: tbd: find out why char * is causing crashes!!!
+  #else
+    #define FREE_SIZE ESP.getFreeHeap()
+    #define asChar(x) ""
+    //x.as<const char *>() //WLEDMM: no arduinojson output for the moment as this is in testing phase
+  #endif
   // #define OPTIMIZED_TREE 1
 #else //embedded
   #include "dependencies/ArduinoJson-recent.h"
@@ -75,7 +82,8 @@
   #include <sstream>
 
   const char spaces[51]         = "                                                  ";
-  #define FREE_SIZE (unsigned int)0
+  #define FREE_SIZE (unsigned int)0 //No free heap function found on embedded
+  #define asChar(x) x.as<const char *>()
   // #define OPTIMIZED_TREE 1
 #endif
 
@@ -88,53 +96,52 @@ void artiPrintf(char const * format, ...)
 
   va_start(argp, format);
 
-  if (!logToFile)
-  {
-    vprintf(format, argp);
-  }
-  else
-  {
-    #if ARTI_PLATFORM == ARTI_ARDUINO
-      // rocket science here! As logfile.printf causes crashes/wrong output we create our own printf here
-      // logFile.printf(format, argp);
-      for (int i = 0; i < strlen(format); i++) 
+  // if (!logToFile)
+  // {
+  //   //WLEDMM: not working to use USER_PRINTF here in case of arduino so moving to rocket science part
+  //   vprintf(format, argp);
+  // }
+  // else
+  #if ARTI_PLATFORM == ARTI_ARDUINO
+    // rocket science here! As logfile.printf causes crashes/wrong output we create our own printf here
+    // logFile.printf(format, argp);
+    for (size_t i = 0; i < strlen(format); i++) 
+    {
+      if (format[i] == '%') 
       {
-        if (format[i] == '%') 
+        switch (format[i+1]) 
         {
-          switch (format[i+1]) 
-          {
-            case 's':
-              logFile.print(va_arg(argp, const char *));
-              break;
-            case 'u':
-              logFile.print(va_arg(argp, unsigned int));
-              break;
-            case 'c':
-              logFile.print((char)va_arg(argp, int));
-              break;
-            case 'f':
-              logFile.print(va_arg(argp, double));
-              break;
-            case '%':
-              logFile.print("%"); // in case of %%
-              break;
-            default:
-              va_arg(argp, int);
-            // logFile.print(x);
-              logFile.print(format[i]);
-              logFile.print(format[i+1]);
-          }
-          i++;
-        } 
-        else 
-        {
-          logFile.print(format[i]);
+          case 's':
+            if (logToFile) logFile.print(va_arg(argp, const char *)); else USER_PRINT(va_arg(argp, const char *));
+            break;
+          case 'u':
+            if (logToFile) logFile.print(va_arg(argp, unsigned int)); else USER_PRINT(va_arg(argp, unsigned int));
+            break;
+          case 'c':
+            if (logToFile) logFile.print((char)va_arg(argp, int)); else USER_PRINT(va_arg(argp, int));
+            break;
+          case 'f':
+            if (logToFile) logFile.print(va_arg(argp, double)); else USER_PRINT(va_arg(argp, double));
+            break;
+          case '%':
+            if (logToFile) logFile.print("%");  else USER_PRINT("%"); // in case of %%
+            break;
+          default:
+            va_arg(argp, int);
+          // logFile.print(x);
+            if (logToFile) logFile.print(format[i]); else USER_PRINT(format[i]);
+            if (logToFile) logFile.print(format[i+1]); else USER_PRINT(format[i+1]);
         }
+        i++;
+      } 
+      else 
+      {
+        if (logToFile) logFile.print(format[i]); else USER_PRINT(format[i]);
       }
-    #else
-      vfprintf(logFile, format, argp);
-    #endif
-  }
+    }
+  #else
+    vfprintf(logFile, format, argp);
+  #endif
   va_end(argp);
 }
 
@@ -560,7 +567,7 @@ class Lexer {
   {
     while (strncmp(this->text + this->pos, endTokens, strlen(endTokens)) != 0)
       this->advance();
-    for (int i=0; i<strlen(endTokens); i++)
+    for (size_t i=0; i<strlen(endTokens); i++)
       this->advance();
   }
 
@@ -696,7 +703,7 @@ class Lexer {
       {
         strcpy(current_token.type, token_type);
         strcpy(current_token.value, token_value);
-        for (int i=0; i<strlen(token_value); i++)
+        for (size_t i=0; i<strlen(token_value); i++)
           this->advance();
         return;
       }
@@ -1072,12 +1079,12 @@ public:
   float arti_get_external_variable(uint8_t variable, float par1 = floatNull, float par2 = floatNull, float par3 = floatNull);
   void arti_set_external_variable(float value, uint8_t variable, float par1 = floatNull, float par2 = floatNull, float par3 = floatNull);
   bool loop(); 
-  
+
   uint8_t parse(JsonVariant parseTree, const char * node_name, char operatorx, JsonVariant expression, uint8_t depth = 0) 
   {
     if (depth > 50) 
     {
-      ERROR_ARTI("Error: Parse recursion level too deep at %s (%u)\n", parseTree.as<std::string>().c_str(), depth);
+      ERROR_ARTI("Error: Parse recursion level too deep at %s (%u)\n", asChar(parseTree), depth);
       errorOccurred = true;
     }
     if (errorOccurred) return ResultFail;
@@ -1101,7 +1108,7 @@ public:
           nextNode_name = expressionElement; //e.g. block
           nextExpression = nodeExpression; // e.g. ["LCURL",{"*": ["statement"]},"RCURL"]
 
-          // DEBUG_ARTI("%s %s %u\n", spaces+50-depth, nextNode_name, depth); //, parseTree.as<std::string>().c_str()
+          // DEBUG_ARTI("%s %s %u\n", spaces+50-depth, nextNode_name, depth); //, asChar(parseTree)
 
           if (parseTree.is<JsonArray>()) 
           {
@@ -1176,7 +1183,7 @@ public:
                 }
                 else 
                 {
-                  ERROR_ARTI("%s Programming error: undefined %c %s\n", spaces+50-depth, objectOperator, objectElement.as<std::string>().c_str());
+                  ERROR_ARTI("%s Programming error: undefined %c %s\n", spaces+50-depth, objectOperator, asChar(objectElement));
                   resultChild2 = ResultFail;
                 }
                 counter++;
@@ -1185,7 +1192,7 @@ public:
             } //not or
           } // element is array
           else
-            ERROR_ARTI("%s Definition error: should be an array %s %c %s\n", spaces+50-depth, stringOrEmpty(nextNode_name), operatorx, objectElement.as<std::string>().c_str());
+            ERROR_ARTI("%s Definition error: should be an array %s %c %s\n", spaces+50-depth, stringOrEmpty(nextNode_name), operatorx, asChar(objectElement));
         }
         else if (nextExpression.is<JsonArray>()) // e.g. ["LPAREN", "expr*", "RPAREN"]
         {
@@ -1230,9 +1237,9 @@ public:
         else //expressionElement is not a node, not a token, not an array and not an object
         {
           if (lexer->definitionJson.containsKey(nextExpression.as<const char *>()))
-            ERROR_ARTI("%s Programming error: %s not a node, token, array or object in %s\n", spaces+50-depth, nextExpression.as<std::string>().c_str(), stringOrEmpty(nextNode_name));
+            ERROR_ARTI("%s Programming error: %s not a node, token, array or object in %s\n", spaces+50-depth, asChar(nextExpression), stringOrEmpty(nextNode_name));
           else
-            ERROR_ARTI("%s Definition error: \"%s\": \"%s\" node should be embedded in array\n", spaces+50-depth, stringOrEmpty(nextNode_name), nextExpression.as<std::string>().c_str());
+            ERROR_ARTI("%s Definition error: \"%s\": \"%s\" node should be embedded in array\n", spaces+50-depth, stringOrEmpty(nextNode_name), asChar(nextExpression));
         } //nextExpression is not a token
 
         if (!nodeExpression.isNull()) //if node
@@ -1254,7 +1261,7 @@ public:
           }
           else //success
           {
-            DEBUG_ARTI("%s found %s\n", spaces+50-depth, nextNode_name);//, nextParseTree.as<std::string>().c_str());
+            DEBUG_ARTI("%s found %s\n", spaces+50-depth, nextNode_name);//, asChar(nextParseTree));
             //parseTree optimization moved to optimize function
 
             // if (nextParseTree.is<JsonObject>())
@@ -1269,10 +1276,10 @@ public:
             //   {
             //     // JsonObject nextParseTreeObject = nextParseTree.as<JsonObject>();
 
-            //     DEBUG_ARTI("%s found %s:%s\n", spaces+50-depth, node_name, parseTree.as<std::string>().c_str());
-            //     DEBUG_ARTI("%s found replace %s by %s %s\n", spaces+50-depth, nextNode_name, begin->key().c_str(), nextParseTree.as<std::string>().c_str());
-            //     DEBUG_ARTI("%s expression %s\n", spaces+50-depth, expression.as<std::string>().c_str());
-            //     DEBUG_ARTI("%s found %s\n", spaces+50-depth, nextParseTree[nextNode_name].as<std::string>().c_str());
+            //     DEBUG_ARTI("%s found %s:%s\n", spaces+50-depth, node_name, asChar(parseTree));
+            //     DEBUG_ARTI("%s found replace %s by %s %s\n", spaces+50-depth, nextNode_name, begin->key().c_str(), asChar(nextParseTree));
+            //     DEBUG_ARTI("%s expression %s\n", spaces+50-depth, asChar(expression));
+            //     DEBUG_ARTI("%s found %s\n", spaces+50-depth, asChar(nextParseTree[nextNode_name]));
 
             //     nextParseTree.remove(nextNode_name);
             //     // char temp[charLength];
@@ -1281,11 +1288,11 @@ public:
             //     // strcat(temp, begin->key().c_str());
             //     nextParseTree[begin->key()] = begin->value();
 
-            //     DEBUG_ARTI("%s found %s:%s\n", spaces+50-depth, node_name, parseTree.as<std::string>().c_str());
+            //     DEBUG_ARTI("%s found %s:%s\n", spaces+50-depth, node_name, asChar(parseTree));
             //   }
             // }
             // else
-            //   DEBUG_ARTI("%s no jsonobject??? %s\n", spaces+50-depth, parseTree.as<std::string>().c_str());
+            //   DEBUG_ARTI("%s no jsonobject??? %s\n", spaces+50-depth, asChar(parseTree));
 
           }
         } // if node
@@ -1318,7 +1325,7 @@ public:
       }
     }
     else { //should never happen
-      ERROR_ARTI("%s Programming error: no array %s %c %s\n", spaces+50-depth, stringOrEmpty(node_name), operatorx, expression.as<std::string>().c_str());
+      ERROR_ARTI("%s Programming error: no array %s %c %s\n", spaces+50-depth, stringOrEmpty(node_name), operatorx, asChar(expression));
     }
 
     return result;
@@ -1327,10 +1334,10 @@ public:
 
   bool analyze(JsonVariant parseTree, const char * treeElement = nullptr, ScopedSymbolTable* current_scope = nullptr, uint8_t depth = 0) 
   {
-    // ANDBG_ARTI("%s Depth %u %s\n", spaces+50-depth, depth, parseTree.as<std::string>().c_str());
+    // ANDBG_ARTI("%s Depth %u %s\n", spaces+50-depth, depth, asChar(parseTree));
     if (depth > 24) //otherwise stack canary errors on Arduino (value determined after testing, should be revisited)
     {
-      ERROR_ARTI("Error: Analyze recursion level too deep at %s (%u)\n", parseTree.as<std::string>().c_str(), depth);
+      ERROR_ARTI("Error: Analyze recursion level too deep at %s (%u)\n", asChar(parseTree), depth);
       errorOccurred = true;
     }
     if (errorOccurred) return false;
@@ -1389,7 +1396,7 @@ public:
             else if (strcmp(valueStr, "||") == 0)
               parseTree["token"] = F_or;
             else
-              ERROR_ARTI("%s Programming error: token not defined as operator %s %s (%u)\n", spaces+50-depth, key, value.as<std::string>().c_str(), depth);
+              ERROR_ARTI("%s Programming error: token not defined as operator %s %s (%u)\n", spaces+50-depth, key, asChar(value), depth);
 
             visitedAlready = true;
           }
@@ -1543,7 +1550,7 @@ public:
                   {
                     JsonObject asop = value["assignoperator"];
                     JsonObject::iterator asopBegin = asop.begin();
-                    ANDBG_ARTI("%s %s\n", spaces+50-depth, asopBegin->value().as<std::string>().c_str());
+                    ANDBG_ARTI("%s %s\n", spaces+50-depth, asChar(asopBegin->value()));
                     if (strcmp(asopBegin->value(), "+=") == 0) 
                       value["assignoperator"] = F_plus;
                     else if (strcmp(asopBegin->value(), "-=") == 0) 
@@ -1623,7 +1630,7 @@ public:
     {
       // string element = parseTree;
       //for some weird reason this causes a crash on esp32
-      // ERROR_ARTI("%s Error: parseTree should be array or object %s (%u)\n", spaces+50-depth, parseTree.as<std::string>().c_str(), depth);
+      // ERROR_ARTI("%s Error: parseTree should be array or object %s (%u)\n", spaces+50-depth, asChar(parseTree), depth);
     }
 
     return !errorOccurred;
@@ -1632,7 +1639,7 @@ public:
   //https://dev.to/lefebvre/compilers-106---optimizer--ig8
   bool optimize(JsonVariant parseTree, uint8_t depth = 0) 
   {
-    // DEBUG_ARTI("%s optimize %s (%u)\n", spaces+50-depth, parseTree.as<std::string>().c_str(), depth);
+    // DEBUG_ARTI("%s optimize %s (%u)\n", spaces+50-depth, asChar(parseTree), depth);
 
     if (parseTree.is<JsonObject>()) 
     {
@@ -1660,7 +1667,7 @@ public:
           if (value.size() == 0) 
           {
             parseTree.remove(key);
-            // DEBUG_ARTI("%s optimize: remove empty %s %s (%u)\n", spaces+50-depth, key, value.as<std::string>().c_str(), depth);
+            // DEBUG_ARTI("%s optimize: remove empty %s %s (%u)\n", spaces+50-depth, key, asChar(value), depth);
           }
 
           visitedAlready = true;
@@ -1682,7 +1689,7 @@ public:
           {
             //- check if a node is not used in analyzer / interpreter and has only one element: go to the parent and replace itself with its child (shrink)
 
-            // DEBUG_ARTI("%s node try to shrink %s : %s (%u)\n", spaces+50-depth, key, value.as<std::string>().c_str(), value.size());
+            // DEBUG_ARTI("%s node try to shrink %s : %s (%u)\n", spaces+50-depth, key, asChar(value), value.size());
 
             JsonObject::iterator objectIterator = value.as<JsonObject>().begin();
 
@@ -1694,26 +1701,26 @@ public:
 
               //   // if (objectIterator2->value().is<JsonObject>() ) //&& objectIterator.size() == 1
               //   {
-              //     DEBUG_ARTI("%s node to shrink %s : %s from %s\n", spaces+50-depth, key, value.as<std::string>().c_str(), parseTree.as<std::string>().c_str());
-              //     DEBUG_ARTI("%s node to shrink %s : %s\n", spaces+50-depth, objectIterator->key().c_str(), objectIterator->value().as<std::string>().c_str());
-              //     // DEBUG_ARTI("%s node to shrink %s : %s\n", spaces+50-depth, objectIterator2->key().c_str(), objectIterator2->value().as<std::string>().c_str());
-              //     DEBUG_ARTI("%s node to shrink replace %s\n", spaces+50-depth, parseTree[key].as<std::string>().c_str());
-              //     DEBUG_ARTI("%s node to shrink      by %s\n", spaces+50-depth, objectIterator->value().as<std::string>().c_str());
+              //     DEBUG_ARTI("%s node to shrink %s : %s from %s\n", spaces+50-depth, key, asChar(value), asChar(parseTree));
+              //     DEBUG_ARTI("%s node to shrink %s : %s\n", spaces+50-depth, objectIterator->key().c_str(), asChar(objectIterator->value()));
+              //     // DEBUG_ARTI("%s node to shrink %s : %s\n", spaces+50-depth, objectIterator2->key().c_str(), asChar(objectIterator2->value()));
+              //     DEBUG_ARTI("%s node to shrink replace %s\n", spaces+50-depth, asChar(parseTree[key]));
+              //     DEBUG_ARTI("%s node to shrink      by %s\n", spaces+50-depth, asChar(objectIterator->value()));
               //     // parseTree[key][objectIterator->key().c_str()] = objectIterator2->value();
               //     parseTree[key] = objectIterator->value();
               //   }
               //   // else
               //   // {
-              //   //   DEBUG_ARTI("%s node to shrink2 %s : %s\n", spaces+50-depth, objectIterator2->key().c_str(), objectIterator2->value().as<std::string>().c_str());
+              //   //   DEBUG_ARTI("%s node to shrink2 %s : %s\n", spaces+50-depth, objectIterator2->key().c_str(), asChar(objectIterator2->value()));
               //   // }
               // }
               // else
-              //   DEBUG_ARTI("%s value should be an object %s in %s : %s from %s\n", spaces+50-depth, objectIterator->key().c_str(), key, objectIterator->value().as<std::string>().c_str(), value.as<std::string>().c_str());
+              //   DEBUG_ARTI("%s value should be an object %s in %s : %s from %s\n", spaces+50-depth, objectIterator->key().c_str(), key, asChar(objectIterator->value()), asChar(value));
               if (stringToNode(objectIterator->key().c_str()) == F_NoNode) // if key not a node
               // if (objectIterator->value().size() == 1)
               {
-                DEBUG_ARTI("%s node to shrink %s in %s : %s from %s\n", spaces+50-depth, objectIterator->key().c_str(), key, value.as<std::string>().c_str(), parseTree.as<std::string>().c_str());
-                // DEBUG_ARTI("%s node to shrink %s in %s = %s from %s\n", spaces+50-depth, objectIterator->key().c_str(), key, objectIterator->value().as<std::string>().c_str(), parseTree[key].as<std::string>().c_str());
+                DEBUG_ARTI("%s node to shrink %s in %s : %s from %s\n", spaces+50-depth, objectIterator->key().c_str(), key, asChar(value), asChar(parseTree));
+                // DEBUG_ARTI("%s node to shrink %s in %s = %s from %s\n", spaces+50-depth, objectIterator->key().c_str(), key, asChar(objectIterator->value()), asChar(parseTree[key]));
                  parseTree[key] = objectIterator->value();
 
                 // parseTree[key]["old"] = objectIterator->key();
@@ -1730,7 +1737,7 @@ public:
           visitedAlready = true;
         }
         else
-          ERROR_ARTI("%s Programming Error: key no node and no token %s %s (%u)\n", spaces+50-depth, key, value.as<std::string>().c_str(), depth);
+          ERROR_ARTI("%s Programming Error: key no node and no token %s %s (%u)\n", spaces+50-depth, key, asChar(value), depth);
 
         if (!visitedAlready && value.size() > 0) // if size == 0 then injected key/value like operator
           optimize(value, depth + 1);
@@ -1747,27 +1754,27 @@ public:
         {
           JsonObject::iterator objectIterator = value.as<JsonObject>().begin();
 
-          // DEBUG_ARTI("%s try replace %s by %s %s\n", spaces+50-depth, key, objectIterator->key().c_str(), parseTree.as<std::string>().c_str());
+          // DEBUG_ARTI("%s try replace %s by %s %s\n", spaces+50-depth, key, objectIterator->key().c_str(), asChar(parseTree));
 
           if (strcmp(objectIterator->key().c_str(), "ID") != 0) //&& definitionJson.containsKey(objectIterator->key())???
           {
-            // DEBUG_ARTI("%s found %s:%s\n", spaces+50-depth, node_name, parseTree.as<std::string>().c_str());
-            // DEBUG_ARTI("%s found replace %s by %s %s\n", spaces+50-depth, key, objectIterator->key().c_str(), parseTree.as<std::string>().c_str());
-            // DEBUG_ARTI("%s found %s\n", spaces+50-depth, value.as<std::string>().c_str());
+            // DEBUG_ARTI("%s found %s:%s\n", spaces+50-depth, node_name, asChar(parseTree));
+            // DEBUG_ARTI("%s found replace %s by %s %s\n", spaces+50-depth, key, objectIterator->key().c_str(), asChar(parseTree));
+            // DEBUG_ARTI("%s found %s\n", spaces+50-depth, asChar(value));
 
-            // DEBUG_ARTI("%s found %s\n", spaces+50-depth, parseTree.as<std::string>().c_str());
-            DEBUG_ARTI("%s replace %s by %s %s\n", spaces+50-depth, key, objectIterator->key().c_str(), parseTree.as<std::string>().c_str());
+            // DEBUG_ARTI("%s found %s\n", spaces+50-depth, asChar(parseTree));
+            DEBUG_ARTI("%s replace %s by %s %s\n", spaces+50-depth, key, objectIterator->key().c_str(), asChar(parseTree));
 
             parseTree.remove(key);
             // parseTree[key] = value;
             parseTree[objectIterator->key()] = objectIterator->value();
 
-            // DEBUG_ARTI("%s found %s:%s\n", spaces+50-depth, node_name, parseTree.as<std::string>().c_str());
+            // DEBUG_ARTI("%s found %s:%s\n", spaces+50-depth, node_name, asChar(parseTree));
 
           }
           // else
           // {
-          //   DEBUG_ARTI("%s not shrinkable %s %s\n", spaces+50-depth, key, value.as<std::string>().c_str());
+          //   DEBUG_ARTI("%s not shrinkable %s %s\n", spaces+50-depth, key, asChar(value));
           //   if (depth > 12) {
           //   // parseTree.remove(key);
           //       char temp[charLength];
@@ -1783,8 +1790,8 @@ public:
             if (stringToNode(objectIterator->key().c_str()) == F_NoNode) // if key not a node
             // if (objectIterator->value().size() == 1)
             {
-              DEBUG_ARTI("%s node to shrink %s in %s : %s from %s\n", spaces+50-depth, objectIterator->key().c_str(), key, value.as<std::string>().c_str(), parseTree.as<std::string>().c_str());
-              // DEBUG_ARTI("%s node to shrink %s in %s = %s from %s\n", spaces+50-depth, objectIterator->key().c_str(), key, objectIterator->value().as<std::string>().c_str(), parseTree[key].as<std::string>().c_str());
+              DEBUG_ARTI("%s node to shrink %s in %s : %s from %s\n", spaces+50-depth, objectIterator->key().c_str(), key, asChar(value), asChar(parseTree));
+              // DEBUG_ARTI("%s node to shrink %s in %s = %s from %s\n", spaces+50-depth, objectIterator->key().c_str(), key, asChar(objectIterator->value()), asChar(parseTree[key]));
                 parseTree[key] = objectIterator->value();
 
               // parseTree[key]["old"] = objectIterator->key();
@@ -1829,10 +1836,10 @@ public:
     {
       // string element = parseTree;
       //for some weird reason this causes a crash on esp32
-      ERROR_ARTI("%s Error: parseTree should be array or object %s (%u)\n", spaces+50-depth, parseTree.as<std::string>().c_str(), depth);
+      ERROR_ARTI("%s Error: parseTree should be array or object %s (%u)\n", spaces+50-depth, asChar(parseTree), depth);
     }
 
-    // DEBUG_ARTI("%s optimized %s (%u)\n", spaces+50-depth, parseTree.as<std::string>().c_str(), depth);
+    // DEBUG_ARTI("%s optimized %s (%u)\n", spaces+50-depth, asChar(parseTree), depth);
 
     return !errorOccurred;
   } //optimize
@@ -1841,11 +1848,11 @@ public:
 
   bool interpret(JsonVariant parseTree, const char * treeElement = nullptr, ScopedSymbolTable* current_scope = nullptr, uint8_t depth = 0) 
   {
-    // RUNLOG_ARTI("%s Interpret %s %s (%u)\n", spaces+50-depth, stringOrEmpty(treeElement), parseTree.as<std::string>().c_str(), depth);
+    // RUNLOG_ARTI("%s Interpret %s %s (%u)\n", spaces+50-depth, stringOrEmpty(treeElement), asChar(parseTree), depth);
 
     if (depth >= 50) 
     {
-      ERROR_ARTI("Error: Interpret recursion level too deep at %s (%u)\n", parseTree.as<std::string>().c_str(), depth);
+      ERROR_ARTI("Error: Interpret recursion level too deep at %s (%u)\n", asChar(parseTree), depth);
       errorOccurred = true;
     }
     if (errorOccurred) return false;
@@ -1858,7 +1865,7 @@ public:
         JsonVariant value = parseTreePair.value();
         if (treeElement == nullptr || strcmp(treeElement, key) == 0) 
         {
-          // RUNLOG_ARTI("%s Interpret object element %s %s\n", spaces+50-depth, key, value.as<std::string>().c_str());
+          // RUNLOG_ARTI("%s Interpret object element %s %s\n", spaces+50-depth, key, asChar(value));
 
           bool visitedAlready = false;
 
@@ -1870,7 +1877,7 @@ public:
             visitedAlready = true;
           else if (parseTree.containsKey("token")) //key is token
           {
-            // RUNLOG_ARTI("%s Token %s %s %s\n", spaces+50-depth, key, valueStr, parseTree.as<std::string>().c_str());
+            // RUNLOG_ARTI("%s Token %s %s %s\n", spaces+50-depth, key, valueStr, asChar(parseTree));
 
             const char * valueStr = value;
 
@@ -2183,7 +2190,7 @@ public:
               {
                 uint8_t oldIndex = valueStack->stack_index;
 
-                // RUNLOG_ARTI("%s before expr term interpret %s %s\n", spaces+50-depth, key, value.as<std::string>().c_str());
+                // RUNLOG_ARTI("%s before expr term interpret %s %s\n", spaces+50-depth, key, asChar(value));
                 interpret(value, nullptr, current_scope, depth + 1); //pushes results
 
                 // RUNLOG_ARTI("%s %s interpret > (%u - %u = %u)\n", spaces+50-depth, key, valueStack->stack_index, oldIndex, valueStack->stack_index - oldIndex);
@@ -2414,7 +2421,7 @@ public:
       }
     }
     else { //not array
-      ERROR_ARTI("%s Error: parseTree should be array or object %s (%u)\n", spaces+50-depth, parseTree.as<std::string>().c_str(), depth);
+      ERROR_ARTI("%s Error: parseTree should be array or object %s (%u)\n", spaces+50-depth, asChar(parseTree), depth);
     }
 
     return !errorOccurred;
@@ -2443,6 +2450,13 @@ public:
     errorOccurred = false;
     frameCounter = 0;
 
+    // softhack007 check that programName has max 43 chars: fileNameLength -7 ("/" +Name + ".wled\0")
+    if ((programName == NULL) || (strlen(programName) < 1) || (strlen(programName) > (fileNameLength-7))) {
+      if (!logFile) logToFile = false;   // make sure this message gets to the user
+      ERROR_ARTI("ARTI-FX: Invalid program name '%s'. Name must be less than %u chars.\n", programName, (unsigned)fileNameLength-7);
+      return false;
+    }
+
     logToFile = true;
     //open logFile
     if (logToFile)
@@ -2450,11 +2464,16 @@ public:
       #if ARTI_PLATFORM == ARTI_ARDUINO
         strcpy(logFileName, "/");
       #endif
-      strcpy(logFileName, programName);
+      strcat(logFileName, programName);   // softhack007 this may overflow logFileName, in case programName has more than 44 chars
       strcat(logFileName, ".log");
 
       #if ARTI_PLATFORM == ARTI_ARDUINO
         logFile = WLED_FS.open(logFileName,"w");
+        if (!logFile) {
+          logToFile = false;
+          ERROR_ARTI("ARTI-FX: Failed to create logfile '%s'\n", logFileName);
+          //ERROR_ARTI("ARTI-FX: Failed to create logfile '%s': %s\n", logFileName, strerror(errno));  // unfortunately, errno is not supported on older platforms
+        }
       #else
         logFile = fopen (logFileName,"w");
       #endif
@@ -2519,22 +2538,30 @@ public:
       return false;
     }
 
+    char programFileName[fileNameLength];
+    #if ARTI_PLATFORM == ARTI_ARDUINO
+      strcpy(programFileName, "/");
+    #endif
+    strcat(programFileName, programName);    // softhack007 this may overflow programFileName, in case programName has more than 43 chars
+    strcat(programFileName, ".wled");
+
     #if ARTI_PLATFORM == ARTI_ARDUINO
       File programFile;
-      programFile = WLED_FS.open(programName, "r");
+      programFile = WLED_FS.open(programFileName, "r");
     #else
       std::fstream programFile;
-      programFile.open(programName, std::ios::in);
+      programFile.open(programFileName, std::ios::in);
     #endif
-    MEMORY_ARTI("open %s %u ✓\n", programName, FREE_SIZE);
+    MEMORY_ARTI("open %s %u ✓\n", programFileName, FREE_SIZE);
     if (!programFile) 
     {
-      ERROR_ARTI("Program file %s not found\n", programName);
+      ERROR_ARTI("Program file '%s' not found\n", programFileName);
+      //ERROR_ARTI("Program file '%s' not found: %s\n", programFileName, strerror(errno)); // errno is not supported on older platforms
       return  false;
     }
 
     //open programFile
-    char * programText;
+    char * programText = nullptr;
     uint16_t programFileSize;
     #if ARTI_PLATFORM == ARTI_ARDUINO
       programFileSize = programFile.size();
@@ -2550,11 +2577,6 @@ public:
     #endif
     programFile.close();
 
-    char parseTreeName[fileNameLength];
-    strcpy(parseTreeName, programName);
-    // if (loadParseTreeFile)
-    //   strcpy(parseTreeName, "Gen");
-    strcat(parseTreeName, ".json");
     #if ARTI_PLATFORM == ARTI_ARDUINO
       parseTreeJsonDoc = new PSRAMDynamicJsonDocument(32768); //less memory on arduino: 32 vs 64 bit?
     #else
@@ -2566,6 +2588,15 @@ public:
     //parse
 
     #ifdef ARTI_DEBUG // only read write file if debug is on
+      char parseTreeName[fileNameLength];
+      #if ARTI_PLATFORM == ARTI_ARDUINO
+        strcpy(parseTreeName, "/");
+      #endif
+      strcat(parseTreeName, programName);
+      // if (loadParseTreeFile)
+      //   strcpy(parseTreeName, "Gen");
+      strcat(parseTreeName, ".json");
+
       #if ARTI_PLATFORM == ARTI_ARDUINO
         File parseTreeFile;
         parseTreeFile = WLED_FS.open(parseTreeName, loadParseTreeFile?"r":"w");
@@ -2575,7 +2606,11 @@ public:
       #endif
     #endif
 
-    if (stages < 1) {close(); return true;}
+    if (stages < 1) {
+      if (nullptr != programText) free(programText);  // softhack007 prevent memory leak
+      close(); 
+      return true;
+    }
 
     if (!loadParseTreeFile) 
     {
@@ -2584,18 +2619,24 @@ public:
       lexer = new Lexer(programText, definitionJson);
       lexer->get_next_token();
 
-      if (stages < 2) {close(); return true;}
+      if (stages < 2) {
+        //if (nullptr != programText) free(programText);  // softhack007 needed to prevent memory leak? lexer has a pointer to programText so its still in use maybe?
+        close(); 
+        return true;
+      }
 
       uint8_t result = parse(parseTreeJson, startNode, '&', lexer->definitionJson[startNode], 0);
 
       if (this->lexer->pos != strlen(this->lexer->text)) 
       {
         ERROR_ARTI("Node %s Program not entirely parsed (%u,%u) %u of %u\n", startNode, this->lexer->lineno, this->lexer->column, this->lexer->pos, (unsigned int)strlen(this->lexer->text));
+        //if (nullptr != programText) free(programText);  // softhack007 needed to prevent memory leak? lexer has a pointer to programText so its still in use maybe?
         return false;
       }
       else if (result == ResultFail) 
       {
         ERROR_ARTI("Node %s Program parsing failed (%u,%u) %u of %u\n", startNode, this->lexer->lineno, this->lexer->column, this->lexer->pos, (unsigned int)strlen(this->lexer->text));
+        //if (nullptr != programText) free(programText);  // softhack007 needed to prevent memory leak? lexer has a pointer to programText so its still in use maybe?
         return false;
       }
       else
@@ -2706,7 +2747,7 @@ public:
     }
 
     if (parseTreeJsonDoc != nullptr) {
-      MEMORY_ARTI("parseTree       %u / %0u%% (%u %u %u)\n", (unsigned int)parseTreeJsonDoc->memoryUsage(), 100 * parseTreeJsonDoc->memoryUsage() / parseTreeJsonDoc->capacity(), (unsigned int)parseTreeJsonDoc->size(), parseTreeJsonDoc->overflowed(), (unsigned int)parseTreeJsonDoc->nesting());
+      MEMORY_ARTI("parseTree       %u / %u%% (%u %u %u)\n", (unsigned int)parseTreeJsonDoc->memoryUsage(), 100 * parseTreeJsonDoc->memoryUsage() / parseTreeJsonDoc->capacity(), (unsigned int)parseTreeJsonDoc->size(), parseTreeJsonDoc->overflowed(), (unsigned int)parseTreeJsonDoc->nesting());
       delete parseTreeJsonDoc; parseTreeJsonDoc = nullptr;
     }
 

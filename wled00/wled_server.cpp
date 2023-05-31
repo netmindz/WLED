@@ -9,6 +9,7 @@
 #ifdef WLED_ENABLE_PIXART
   #include "html_pixart.h"
 #endif
+#include "html_cpal.h"
 
 /*
  * Integrated HTTP web server page declarations
@@ -225,7 +226,7 @@ void initServer()
       }
     }
     request->send(200, "application/json", F("{\"success\":true}"));
-  });
+  }, JSON_BUFFER_SIZE);
   server.addHandler(handler);
 
   server.on("/version", HTTP_GET, [](AsyncWebServerRequest *request){
@@ -363,12 +364,13 @@ void initServer()
   });
   #endif
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
-    USER_PRINTLN("Client request"); //WLEDMM: want to see if client connects to wled
+    USER_PRINT("Client request"); //WLEDMM: want to see if client connects to wled
     #ifdef ARDUINO_ARCH_ESP32
     DEBUG_PRINTF("%s min free stack %d\n", pcTaskGetTaskName(NULL), uxTaskGetStackHighWaterMark(NULL)); //WLEDMM
     #endif
     if (captivePortal(request)) return;
     serveIndexOrWelcome(request);
+    USER_PRINTLN(" done"); //WLEDMM: want to see if client connects to wled
   });
 
   #ifdef WLED_ENABLE_PIXART
@@ -381,6 +383,15 @@ void initServer()
     request->send(response);
   });
   #endif
+
+  server.on("/cpal.htm", HTTP_GET, [](AsyncWebServerRequest *request){
+    if (handleFileRead(request, "/cpal.htm")) return;
+    if (handleIfNoneMatchCacheHeader(request)) return;
+    AsyncWebServerResponse *response = request->beginResponse_P(200, "text/html", PAGE_cpal, PAGE_cpal_L);
+    response->addHeader(FPSTR(s_content_enc),"gzip");
+    setStaticContentCacheHeaders(response);
+    request->send(response);
+  });
 
   #ifdef WLED_ENABLE_WEBSOCKETS
   server.addHandler(&ws);

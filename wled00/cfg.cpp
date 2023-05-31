@@ -19,6 +19,8 @@ void getStringFromJson(char* dest, const char* src, size_t len) {
 bool deserializeConfig(JsonObject doc, bool fromFS) {
 
   //WLEDMM add USER_PRINT
+  // String temp;
+  // serializeJson(doc, temp);
   USER_PRINTF("deserializeConfig\n");
 
   bool needsSave = false;
@@ -177,10 +179,11 @@ bool deserializeConfig(JsonObject doc, bool fromFS) {
       uint8_t ledType = elm["type"] | TYPE_WS2812_RGB;
       bool reversed = elm["rev"];
       bool refresh = elm["ref"] | false;
+      uint16_t freqkHz = elm[F("freq")] | 0;  // will be in kHz for DotStar and Hz for PWM (not yet implemented fully)
       ledType |= refresh << 7; // hack bit 7 to indicate strip requires off refresh
       uint8_t AWmode = elm[F("rgbwm")] | autoWhiteMode;
       if (fromFS) {
-        BusConfig bc = BusConfig(ledType, pins, start, length, colorOrder, reversed, skipFirst, AWmode);
+        BusConfig bc = BusConfig(ledType, pins, start, length, colorOrder, reversed, skipFirst, AWmode); //WLEDMM to do bus , freqkHz
         mem += BusManager::memUsage(bc);
         if (mem <= MAX_LED_MEMORY) if (busses.add(bc) == -1) break;  // finalization will be done in WLED::beginStrip()
       } else {
@@ -320,9 +323,9 @@ bool deserializeConfig(JsonObject doc, bool fromFS) {
     Wire.setPins(i2c_sda, i2c_scl); // this will fail if Wire is initilised (Wire.begin() called prior)
     #endif
     // Wire.begin(); // WLEDMM moved into pinManager
-    Serial.printf("pinmgr success for global i2c %d %d\n", i2c_sda, i2c_scl);
+    DEBUG_PRINTF("pinmgr success for global i2c %d %d\n", i2c_sda, i2c_scl);
   } else {
-    Serial.printf("pinmgr not success for global i2c %d %d\n", i2c_sda, i2c_scl);
+    DEBUG_PRINTF("pinmgr not success for global i2c %d %d\n", i2c_sda, i2c_scl);
   }
   JsonArray hw_if_spi = hw[F("if")][F("spi-pin")];
   CJSON(spi_mosi, hw_if_spi[0]);
@@ -335,9 +338,9 @@ bool deserializeConfig(JsonObject doc, bool fromFS) {
     #else
     SPI.begin();
     #endif
-    Serial.printf("pinmgr success for global spi %d %d %d\n", spi_mosi, spi_miso, spi_sclk);
+    DEBUG_PRINTF("pinmgr success for global spi %d %d %d\n", spi_mosi, spi_miso, spi_sclk);
   } else {
-    Serial.printf("pinmgr not success for global spi %d %d %d\n", spi_mosi, spi_miso, spi_sclk);
+    DEBUG_PRINTF("pinmgr not success for global spi %d %d %d\n", spi_mosi, spi_miso, spi_sclk);
   }
 
   //int hw_status_pin = hw[F("status")]["pin"]; // -1
@@ -784,6 +787,7 @@ void serializeConfig() {
     ins["type"] = bus->getType() & 0x7F;
     ins["ref"] = bus->isOffRefreshRequired();
     ins[F("rgbwm")] = bus->getAutoWhiteMode();
+    // ins[F("freq")] = bus->getFrequency(); WLEDMM to do bus
   }
 
   JsonArray hw_com = hw.createNestedArray(F("com"));
@@ -1072,7 +1076,9 @@ bool deserializeConfigSec() {
   JsonObject ap = doc["ap"];
   getStringFromJson(apPass, ap["psk"] , 65);
 
+#if defined(WLED_ENABLE_MQTT) || !defined(WLED_DISABLE_HUESYNC)
   JsonObject interfaces = doc["if"];
+#endif
 
 #ifdef WLED_ENABLE_MQTT
   JsonObject if_mqtt = interfaces["mqtt"];
@@ -1111,7 +1117,10 @@ void serializeConfigSec() {
   JsonObject ap = doc.createNestedObject("ap");
   ap["psk"] = apPass;
 
+#if defined(WLED_ENABLE_MQTT) || !defined(WLED_DISABLE_HUESYNC)
   JsonObject interfaces = doc.createNestedObject("if");
+#endif
+
 #ifdef WLED_ENABLE_MQTT
   JsonObject if_mqtt = interfaces.createNestedObject("mqtt");
   if_mqtt["psk"] = mqttPass;

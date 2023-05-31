@@ -9,33 +9,9 @@ function toggleCEEditor(name, segID) {
     d.getElementById('ceEditor').style.transform = (isCEEditor) ? "translateY(0px)":"translateY(100%)";
 }
 
-function fetchAndExecute(url, name, callback, callError)
-{
-  fetch
-  (url+name, {
-    method: 'get'
-  })
-  .then(res => {
-    if (!res.ok) {
-		callError("File " + name + " not found");
-    	return "";
-    }
-    return res.text();
-  })
-  .then(text => {
-    callback(text);
-  })
-  .catch(function (error) {
-    callError("Error getting " + name);
-  })
-  .finally(() => {
-    // if (callback) setTimeout(callback,99);
-  });
-}
-
 function loadLogFile(name, attempt) {
     var ceLogArea = d.getElementById("ceLogArea");
-    fetchAndExecute((loc?`http://${locip}`:'.') + "/", name , function(logtext)
+    fetchAndExecute((loc?`http://${locip}`:'.') + "/", name, null, function(parms,logtext)
     {
       if (logtext == "") {
         if (attempt < 10) {
@@ -50,7 +26,7 @@ function loadLogFile(name, attempt) {
       }
       else
         ceLogArea.value = logtext;
-    }, function(error){
+    }, function(parms,error){
       showToast(error);
       console.log(error);
     });
@@ -72,11 +48,11 @@ function uploadFileWithText(name, text)
 }
 
 function saveCE(name, segID) {
-    showToast("Saving " + name);
+    showToast("Saving " + name + ".wled");
 
     var ceProgramArea = d.getElementById("ceProgramArea");
 
-    uploadFileWithText("/" + name, ceProgramArea.value);
+    uploadFileWithText("/" + name + ".wled", ceProgramArea.value);
 
     var obj = {"seg": {"id": segID, "reset": true}};
     requestJson(obj);
@@ -91,13 +67,13 @@ function saveCE(name, segID) {
 
 function populateCEEditor(name, segID)
 {
-  fetchAndExecute((loc?`http://${locip}`:'.') + "/", name + ".wled", function(text)
+  fetchAndExecute((loc?`http://${locip}`:'.') + "/", name + ".wled", null, function(parms,text)
   {
     var cn=`ARTI-FX Editor<br>
             <i>${name}.wled</i><br>
             <textarea class="ceTextarea" id="ceProgramArea">${text}</textarea><br>
             <button class="btn infobtn" onclick="toggleCEEditor()">Close</button>
-            <button class="btn infobtn" onclick="saveCE('${name}.wled', ${segID})">Save and Run</button><br>
+            <button class="btn infobtn" onclick="saveCE('${name}', ${segID})">Save and Run</button><br>
             <button class="btn infobtn" onclick="downloadGHFile('CE','${name}.wled')">Download ${name}.wled</button>
             <button class="btn infobtn" onclick="loadCETemplate('${name}')">Load template</button><br>
             <button class="btn infobtn" onclick="downloadGHFile('CE','wledv033.json',true,true)">Download wled json</button>
@@ -115,9 +91,9 @@ function populateCEEditor(name, segID)
 
     var ceLogArea = d.getElementById("ceLogArea");
     ceLogArea.value = ".";
-    loadLogFile(name + ".wled.log", 1);
+    loadLogFile(name + ".log", 1);
 
-  }, function(error){
+  }, function(parms,error){
     showToast(error);
     console.log(error);
   });
@@ -129,7 +105,7 @@ function downloadGHFile(url, name, save=false, warn=false) { //Githubfile
     if (url == "HBE") url = "https://raw.githubusercontent.com/MoonModules/WLED-Effects/master/Presets/HB_PresetPack210808_32x32_16seg/Effects%20pack/";
     if (url == "LM") url = "https://raw.githubusercontent.com/MoonModules/WLED-Effects/master/Ledmaps/";
 
-    fetchAndExecute(url, name, function(text) {
+    fetchAndExecute(url, name, null, function(parms,text) {
         if (save) {
             if (warn && !confirm('Are you sure to download/overwrite ' + name + '?'))
               return;
@@ -140,7 +116,7 @@ function downloadGHFile(url, name, save=false, warn=false) { //Githubfile
           var ceProgramArea = d.getElementById("ceProgramArea");
           ceProgramArea.value = text;
         }
-    }, function(error){
+    }, function(parms,error){
       showToast(error);
       console.log(url + name,error);
     });

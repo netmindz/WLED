@@ -3,7 +3,7 @@
  */
 
 // From ColorWavesWithPalettes by Mark Kriegsman: https://gist.github.com/kriegsman/8281905786e8b2632aeb
-// Unfortunaltely, these are stored in RAM!
+// Unfortunately, these are stored in RAM!
 
 // Gradient palette "ib_jul01_gp", originally from
 // http://soliton.vm.bytemark.co.uk/pub/cpt-city/ing/xmas/tn/ib_jul01.png.index.html
@@ -918,6 +918,7 @@ const byte* const gGradientPalettes[] PROGMEM = {
   // Palette contents not actually used as built on the fly, just here to create menu option
   audio_responsive_gp,          //71-58 AudioResponsive  WLEDMM netmindz ar palette - placeholder1
   audio_responsive_gp,          //72-59 AudioResponsive  WLEDMM netmindz ar palette - placeholder2
+  audio_responsive_gp,          //73-60 AudioResponsive  WLEDMM netmindz ar palette - placeholder3
 };
 
 #endif

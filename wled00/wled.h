@@ -8,7 +8,7 @@
  */
 
 // version code in format yymmddb (b = daily build)
-#define VERSION 2304060
+#define VERSION 2305291
 
 //uncomment this if you have a "my_config.h" file you'd like to use
 //#define WLED_USE_MY_CONFIG
@@ -146,11 +146,15 @@
 // The following is a construct to enable code to compile without it.
 // There is a code thet will still not use PSRAM though:
 //    AsyncJsonResponse is a derived class that implements DynamicJsonDocument (AsyncJson-v6.h)
-#if defined(ARDUINO_ARCH_ESP32) && defined(WLED_USE_PSRAM)
+#if defined(ARDUINO_ARCH_ESP32) && defined(BOARD_HAS_PSRAM) && (defined(WLED_USE_PSRAM) || defined(WLED_USE_PSRAM_JSON))
 struct PSRAM_Allocator {
   void* allocate(size_t size) {
     if (psramFound()) return ps_malloc(size); // use PSRAM if it exists
     else              return malloc(size);    // fallback
+  }
+  void* reallocate(void* ptr, size_t new_size) {
+    if (psramFound()) return ps_realloc(ptr, new_size); // use PSRAM if it exists
+    else              return realloc(ptr, new_size);    // fallback
   }
   void deallocate(void* pointer) {
     free(pointer);
@@ -295,7 +299,7 @@ WLED_GLOBAL byte apBehavior _INIT(AP_BEHAVIOR_BOOT_NO_CONN);       // access poi
 WLED_GLOBAL IPAddress staticIP      _INIT_N(((  0,   0,  0,  0))); // static IP of ESP
 WLED_GLOBAL IPAddress staticGateway _INIT_N(((  0,   0,  0,  0))); // gateway (router) IP
 WLED_GLOBAL IPAddress staticSubnet  _INIT_N(((255, 255, 255, 0))); // most common subnet in home networks
-#if defined(ARDUINO_ARCH_ESP32) && !defined(ARDUINO_ESP32_PICO)
+#if defined(ARDUINO_ARCH_ESP32) && !defined(ARDUINO_ESP32_PICO) && !defined(WLEDMM_WIFI_POWERON_HACK)
 WLED_GLOBAL bool noWifiSleep _INIT(true);                          // disabling modem sleep modes will increase heat output and power usage, but may help with connection issues
 #else
 WLED_GLOBAL bool noWifiSleep _INIT(false);
@@ -325,7 +329,11 @@ WLED_GLOBAL float gammaCorrectVal _INIT(2.8f); // gamma correction value
 
 WLED_GLOBAL byte col[]    _INIT_N(({ 255, 160, 0, 0 }));  // current RGB(W) primary color. col[] should be updated if you want to change the color.
 WLED_GLOBAL byte colSec[] _INIT_N(({ 0, 0, 0, 0 }));      // current RGB(W) secondary color
+#if defined(ABL_MILLIAMPS_DEFAULT) && ABL_MILLIAMPS_DEFAULT < 600
+WLED_GLOBAL byte briS     _INIT(64);                      // WLEDMM reduce default brightness for low-power devices
+#else
 WLED_GLOBAL byte briS     _INIT(128);                     // default brightness
+#endif
 
 WLED_GLOBAL byte nightlightTargetBri _INIT(0);      // brightness after nightlight is over
 WLED_GLOBAL byte nightlightDelayMins _INIT(60);
@@ -333,7 +341,7 @@ WLED_GLOBAL byte nightlightMode      _INIT(NL_MODE_FADE); // See const.h for ava
 WLED_GLOBAL bool fadeTransition      _INIT(true);   // enable crossfading color transition
 WLED_GLOBAL uint16_t transitionDelay _INIT(750);    // default crossfade duration in ms
 
-WLED_GLOBAL byte briMultiplier _INIT(100);          // % of brightness to set (to limit power, if you set it to 50 and set bri to 255, actual brightness will be 127)
+WLED_GLOBAL uint_fast16_t briMultiplier _INIT(100);          // % of brightness to set (to limit power, if you set it to 50 and set bri to 255, actual brightness will be 127)
 
 // User Interface CONFIG
 #ifndef SERVERNAME
