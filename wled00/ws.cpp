@@ -9,19 +9,20 @@ uint16_t wsLiveClientId = 0;
 unsigned long wsLastLiveTime = 0;
 //uint8_t* wsFrameBuffer = nullptr;
 
-#define WS_LIVE_INTERVAL 40
+#define WS_LIVE_INTERVAL 160
 
 void wsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventType type, void * arg, uint8_t *data, size_t len)
 {
   if(type == WS_EVT_CONNECT){
     //client connected
-    DEBUG_PRINTLN(F("WS client connected."));
+    USER_PRINTLN(F("WS client connected."));
     sendDataWs(client);
   } else if(type == WS_EVT_DISCONNECT){
     //client disconnected
     if (client->id() == wsLiveClientId) wsLiveClientId = 0;
-    DEBUG_PRINTLN(F("WS client disconnected."));
+    USER_PRINTLN(F("WS client disconnected."));
   } else if(type == WS_EVT_DATA){
+    USER_PRINTLN(F("WS event data."));
     // data packet
     AwsFrameInfo * info = (AwsFrameInfo*)arg;
     if(info->final && info->index == 0 && info->len == len){
@@ -97,6 +98,7 @@ void wsEvent(AsyncWebSocket * server, AsyncWebSocketClient * client, AwsEventTyp
 
 void sendDataWs(AsyncWebSocketClient * client)
 {
+  USER_PRINTF("sendDataWs\n");
   if (!ws.count()) return;
   AsyncWebSocketMessageBuffer * buffer;
 
@@ -198,7 +200,7 @@ bool sendLiveLedsWs(uint32_t wsClient)
 
 void handleWs()
 {
-  if (millis() - wsLastLiveTime > WS_LIVE_INTERVAL)
+  if (millis() - wsLastLiveTime > MAX((strip.getLengthTotal()/20), WS_LIVE_INTERVAL)) //WLEDMM dynamic nr of peek frames per second
   {
     #ifdef ESP8266
     ws.cleanupClients(3);
