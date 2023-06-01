@@ -10,6 +10,42 @@
  * https://github.com/someweisguy/esp_dmx
  */
 
+#if defined(WLED_ENABLE_DMX_INPUT) || defined(WLED_ENABLE_DMX)
+
+#include <esp_dmx.h>
+
+dmx_port_t dmxPort = 2;
+byte dmxdata[DMX_PACKET_SIZE];
+
+void initDMX() {
+/* Set the DMX hardware pins to the pins that we want to use. */
+  if(dmxReceivePin > 0 && dmxTransmitPin < 1) {
+    USER_PRINTF("Listening for DMX on pin %u\n", dmxReceivePin);
+    dmx_set_pin(dmxPort, dmxTransmitPin, dmxReceivePin, dmxEnablePin);
+  }
+  else if(dmxTransmitPin > 0 && dmxReceivePin < 1) {
+    USER_PRINTF("Sending DMX on pin %u\n", dmxTransmitPin);
+    dmx_set_pin(dmxPort, dmxTransmitPin, dmxReceivePin, dmxEnablePin);
+  }
+  else if (dmxTransmitPin > 0 && dmxReceivePin > 0) {
+    USER_PRINTLN("DMX needs to be set for either send or receive - only set tx or rx pin");
+    return;
+  }
+  else {
+    USER_PRINTLN("DMX input and ouput disabled due to dmxReceivePin and dmxTransmitPin not being set");
+    return;
+  }
+
+  /* Now we can install the DMX driver! We'll tell it which DMX port to use and
+    which interrupt priority it should have. If you aren't sure which interrupt
+    priority to use, you can use the macro `DMX_DEFAULT_INTR_FLAG` to set the
+    interrupt to its default settings.*/
+  dmx_driver_install(dmxPort, ESP_INTR_FLAG_LEVEL3);
+}
+
+#endif
+
+
 #ifdef WLED_ENABLE_DMX
 
 // Some new MCUs (-S2, -C3) don't have HardwareSerial(2)
@@ -100,20 +136,14 @@ void dmx_update() {
   dmx.update();
 }
  #else
-#include <esp_dmx.h>
-dmx_port_t dmxPort = 2;
-byte dmx_data[DMX_PACKET_SIZE];
-void initDMX() {
-  /* Set the DMX hardware pins to the pins that we want to use. */
-  dmx_set_pin(dmxPort, 2, -1, -1);
-  dmx_driver_install(dmxPort, ESP_INTR_FLAG_LEVEL3);
- }
-
 void dmx_write(uint8_t addr, uint8_t value) {
-  dmx_data[addr] = value;
+  dmxdata[addr] = value;
 }
 void dmx_update() {
-  dmx_write(dmxPort, dmx_data, DMX_PACKET_SIZE);
+  if(dmxTransmitPin < 1) {
+      return;
+  }
+  dmx_write(dmxPort, dmxdata, DMX_PACKET_SIZE);
   dmx_send(dmxPort, DMX_PACKET_SIZE);
 //  dmx_wait_sent(dmxPort, DMX_TIMEOUT_TICK); // don't think we need this line 
 }
@@ -125,28 +155,6 @@ void handleDMX() {}
 
 
 #ifdef WLED_ENABLE_DMX_INPUT
-
-#include <esp_dmx.h>
-
-
-dmx_port_t dmxPort = 2;
-void initDMX() {
-/* Set the DMX hardware pins to the pins that we want to use. */
-  if(dmxReceivePin > 0) {
-    USER_PRINTF("Listening for DMX on pin %u\n", dmxReceivePin);
-    dmx_set_pin(dmxPort, dmxTransmitPin, dmxReceivePin, dmxEnablePin);
-  }
-  else {
-    USER_PRINTLN("DMX input disabled due to dmxReceivePin not being set");
-    return;
-  }
-
-  /* Now we can install the DMX driver! We'll tell it which DMX port to use and
-    which interrupt priority it should have. If you aren't sure which interrupt
-    priority to use, you can use the macro `DMX_DEFAULT_INTR_FLAG` to set the
-    interrupt to its default settings.*/
-  dmx_driver_install(dmxPort, ESP_INTR_FLAG_LEVEL3);
-}
   
 bool dmxIsConnected = false;
 unsigned long dmxLastUpdate = 0;
@@ -155,7 +163,7 @@ void handleDMXInput() {
   if(dmxReceivePin < 1) {
     return;
   }
-  byte dmxdata[DMX_PACKET_SIZE];
+
   dmx_packet_t packet;
   unsigned long now = millis();
   if (dmx_receive(dmxPort, &packet, 0)) {
