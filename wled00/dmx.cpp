@@ -12,6 +12,13 @@
 
 #ifdef WLED_ENABLE_DMX
 
+// Some new MCUs (-S2, -C3) don't have HardwareSerial(2)
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(4, 2, 0)
+  #if SOC_UART_NUM < 3
+  #error DMX output is not possible on your MCU, as it does not have HardwareSerial(2)
+  #endif
+#endif
+
 // WLEDMM: seems that DMX output triggers watchdog resets when compiling for IDF 4.4.x
 #ifdef ARDUINO_ARCH_ESP32
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(4, 2, 0)
