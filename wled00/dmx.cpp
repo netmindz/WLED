@@ -11,7 +11,7 @@
  */
 
 #if defined(WLED_ENABLE_DMX_INPUT) || defined(WLED_ENABLE_DMX)
-
+#ifndef ESP8266
 #include <esp_dmx.h>
 
 dmx_port_t dmxPort = 2;
@@ -42,21 +42,22 @@ void initDMX() {
     interrupt to its default settings.*/
   dmx_driver_install(dmxPort, ESP_INTR_FLAG_LEVEL3);
 }
+#endif
 
 #endif
 
 
 #ifdef WLED_ENABLE_DMX
 
+
+#ifdef ARDUINO_ARCH_ESP32
 // Some new MCUs (-S2, -C3) don't have HardwareSerial(2)
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(4, 2, 0)
   #if SOC_UART_NUM < 3
   #error DMX output is not possible on your MCU, as it does not have HardwareSerial(2)
   #endif
 #endif
-
 // WLEDMM: seems that DMX output triggers watchdog resets when compiling for IDF 4.4.x
-#ifdef ARDUINO_ARCH_ESP32
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(4, 2, 0)
 #warning DMX output support might cause watchdog reset when compiling with ESP-IDF V4.4.x
 // E (24101) task_wdt: Task watchdog got triggered. The following tasks did not reset the watchdog in time:
