@@ -127,8 +127,6 @@
 #ifdef WLED_ENABLE_DMX
  #ifdef ESP8266
   #include "src/dependencies/dmx/ESPDMX.h"
- #else //ESP32
-  #include "src/dependencies/dmx/SparkFunDMX.h"
  #endif
 #endif
 
@@ -397,9 +395,10 @@ WLED_GLOBAL bool arlsForceMaxBri _INIT(false);                    // enable to f
 #ifdef WLED_ENABLE_DMX
  #ifdef ESP8266
   WLED_GLOBAL DMXESPSerial dmx;
- #else //ESP32
-  WLED_GLOBAL SparkFunDMX dmx;
  #endif
+ void dmx_write(uint8_t addr, uint8_t value);
+ void dmx_update();
+ 
 WLED_GLOBAL uint16_t e131ProxyUniverse _INIT(0);                  // output this E1.31 (sACN) / ArtNet universe via MAX485 (0 = disabled)
 #endif
 #ifdef WLED_ENABLE_DMX_INPUT

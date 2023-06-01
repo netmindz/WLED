@@ -119,8 +119,8 @@ void handleDMXData(uint16_t uni, uint16_t dmxChannels, uint8_t* e131_data, uint8
   // does not act on out-of-order packets yet
   if (e131ProxyUniverse > 0 && uni == e131ProxyUniverse) {
     for (uint16_t i = 1; i <= dmxChannels; i++)
-      dmx.write(i, e131_data[i]);
-    dmx.update();
+      dmx_write(i, e131_data[i]);
+    dmx_update();
   }
   #endif
 

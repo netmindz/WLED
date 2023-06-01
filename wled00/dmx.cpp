@@ -7,7 +7,7 @@
  * ESP8266 Library from:
  * https://github.com/Rickgg/ESP-Dmx
  * ESP32 Library from:
- * https://github.com/sparkfun/SparkFunDMX
+ * https://github.com/someweisguy/esp_dmx
  */
 
 #ifdef WLED_ENABLE_DMX
@@ -55,40 +55,63 @@ void handleDMX()
       int DMXAddr = DMXFixtureStart + j;
       switch (DMXFixtureMap[j]) {
         case 0:        // Set this channel to 0. Good way to tell strobe- and fade-functions to fuck right off.
-          dmx.write(DMXAddr, 0);
+          dmx_write(DMXAddr, 0);
           break;
         case 1:        // Red
-          dmx.write(DMXAddr, calc_brightness ? (r * brightness) / 255 : r);
+          dmx_write(DMXAddr, calc_brightness ? (r * brightness) / 255 : r);
           break;
         case 2:        // Green
-          dmx.write(DMXAddr, calc_brightness ? (g * brightness) / 255 : g);
+          dmx_write(DMXAddr, calc_brightness ? (g * brightness) / 255 : g);
           break;
         case 3:        // Blue
-          dmx.write(DMXAddr, calc_brightness ? (b * brightness) / 255 : b);
+          dmx_write(DMXAddr, calc_brightness ? (b * brightness) / 255 : b);
           break;
         case 4:        // White
-          dmx.write(DMXAddr, calc_brightness ? (w * brightness) / 255 : w);
+          dmx_write(DMXAddr, calc_brightness ? (w * brightness) / 255 : w);
           break;
         case 5:        // Shutter channel. Controls the brightness.
-          dmx.write(DMXAddr, brightness);
+          dmx_write(DMXAddr, brightness);
           break;
         case 6:        // Sets this channel to 255. Like 0, but more wholesome.
-          dmx.write(DMXAddr, 255);
+          dmx_write(DMXAddr, 255);
           break;
       }
     }
   }
 
-  dmx.update();        // update the DMX bus
+  dmx_update();        // update the DMX bus
 }
 
-void initDMX() {
  #ifdef ESP8266
+void initDMX() {
   dmx.init(512);        // initialize with bus length
- #else
-  dmx.initWrite(512);  // initialize with bus length
- #endif
 }
+void dmx_write(uint8_t addr, uint8_t value) {
+  dmx.write(addr, value);
+}
+void dmx_update() {
+  dmx.update();
+}
+ #else
+#include <esp_dmx.h>
+dmx_port_t dmxPort = 2;
+byte dmx_data[DMX_PACKET_SIZE];
+void initDMX() {
+  /* Set the DMX hardware pins to the pins that we want to use. */
+  dmx_set_pin(dmxPort, 2, -1, -1);
+  dmx_driver_install(dmxPort, ESP_INTR_FLAG_LEVEL3);
+ }
+
+void dmx_write(uint8_t addr, uint8_t value) {
+  dmx_data[addr] = value;
+}
+void dmx_update() {
+  dmx_write(dmxPort, dmx_data, DMX_PACKET_SIZE);
+  dmx_send(dmxPort, DMX_PACKET_SIZE);
+//  dmx_wait_sent(dmxPort, DMX_TIMEOUT_TICK); // don't think we need this line 
+}
+  #endif
+
 #else
 void handleDMX() {}
 #endif
