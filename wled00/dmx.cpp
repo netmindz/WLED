@@ -93,7 +93,6 @@ void initDMX() {
 void handleDMX() {}
 #endif
 
-#define WLED_ENABLE_DMX_INPUT
 #ifdef WLED_ENABLE_DMX_INPUT
 
 #include <esp_dmx.h>
