@@ -18,29 +18,19 @@
 #include "wled.h"
 
 #include <Wire.h>
-#include <VL53L0X.h>
+#include <SparkFun_APDS9960.h>
 
-#ifndef VL53L0X_MAX_RANGE_MM
-#define VL53L0X_MAX_RANGE_MM 230 // max height in millimeters to react for motions
-#endif
-
-#ifndef VL53L0X_MIN_RANGE_OFFSET
-#define VL53L0X_MIN_RANGE_OFFSET 60 // minimal range in millimeters that sensor can detect. Used in long motions to correct brightness calculation.
-#endif
 
 #ifndef VL53L0X_DELAY_MS
 #define VL53L0X_DELAY_MS 100 // how often to get data from sensor
 #endif
 
-#ifndef VL53L0X_LONG_MOTION_DELAY_MS
-#define VL53L0X_LONG_MOTION_DELAY_MS 1000 // switch onto "long motion" action after this delay
-#endif
 
-class UsermodVL53L0XGestures : public Usermod {
+class UsermodAPDS9960Gestures : public Usermod {
   private:
     //Private class members. You can declare variables and functions only accessible to your usermod here
     unsigned long lastTime = 0;
-    VL53L0X sensor;
+    SparkFun_APDS9960 sensor;
     bool enabled = true;
 
     bool wasMotionBefore = false;
@@ -56,14 +46,10 @@ class UsermodVL53L0XGestures : public Usermod {
         return;
       }
 
-      //PinManagerPinType pins[2] = { { i2c_scl, true }, { i2c_sda, true } };
-      //if (!pinManager.allocateMultiplePins(pins, 2, PinOwner::HW_I2C)) { enabled = false; return; }
-      //Wire.begin();
-
       sensor.setTimeout(150);
       if (!sensor.init())
       {
-        DEBUG_PRINTLN(F("Failed to detect and initialize VL53L0X sensor!"));
+        DEBUG_PRINTLN(F("Failed to detect and initialize APDS9960 sensor!"));
         enabled = false;      // WLEDMM bugfix
       } else {
         sensor.setMeasurementTimingBudget(20000); // set high speed mode
@@ -133,6 +119,6 @@ class UsermodVL53L0XGestures : public Usermod {
      */
     uint16_t getId()
     {
-      return USERMOD_ID_VL53L0X;
+      return USERMOD_ID_APDS9960;
     }
 };
