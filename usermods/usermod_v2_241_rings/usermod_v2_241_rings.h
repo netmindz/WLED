@@ -4,15 +4,13 @@
 //========================================================================================================================
 
 
-static const char _data_FX_mode_Rings[] PROGMEM = "Rings- Rings@Speed;;1;2";
-static const char _data_FX_mode_SimpleRings[] PROGMEM = "Rings - Simple@Speed;;1;2";
-static const char _data_FX_mode_RandomFlow[] PROGMEM = "Rings - Random Flow@Speed;;1;2";
-static const char _data_FX_mode_AudioRings[] PROGMEM = "Rings - AudioRings@Speed;;1;2";
+static const char _data_FX_mode_Rings[] PROGMEM = "Rings - Rings@Jump,Inward;;!;1";
+static const char _data_FX_mode_SimpleRings[] PROGMEM = "Rings - Simple@Jump;;!;1";
+static const char _data_FX_mode_RandomFlow[] PROGMEM = "Rings - Random Flow@;;!;1";
+static const char _data_FX_mode_AudioRings[] PROGMEM = "Rings - AudioRings@Inward;;!;1";
 
 #define ringCount 9 // total Number of Rings
 #define RINGS 9
-
-int hue[RINGS];
 
 //Map rings on disk to indicies.
 //This is where all the magic happens.
@@ -29,9 +27,6 @@ uint8_t ringMap[ringCount][2] = {
   {181, 240}, //8 Outer Ring
 };
 
-//For convenience, last ring index
-uint8_t lastRing = ringCount - 1;
-
 void setRing(int ring, CRGB colour) {
   for (int i = ringMap[ring][0]; i <= ringMap[ring][1]; i++) {
     SEGMENT.setPixelColor(i, colour);
@@ -46,7 +41,7 @@ void setRingFromFtt(int index, int ring) {
   }
   uint8_t *fftResult = (uint8_t*)um_data->u_data[2];
 
-  uint8_t val = fftResult[index];
+  uint8_t val = fftResult[map(index, 0, 6, 0, NUM_GEQ_CHANNELS)];
   // Visualize leds to the beat
   CRGB color =  SEGMENT.color_from_palette(val, false, false, 0);
   color.nscale8_video(val);
@@ -59,10 +54,18 @@ uint16_t mode_Rings() {
   int JUMP = map(SEGMENT.custom1, 0, 255, 1, 16); // TODO: set range
   bool INWARD = (SEGMENT.custom2 > 125) ? true  : false;
 
+  static uint8_t hue[RINGS];
+
+  if (SEGENV.call == 0) {
+    for (int r = 0; r < RINGS; r++) {
+      hue[r] = random(0, 255);
+    }
+  }
+
   for (int r = 0; r < RINGS; r++) {
     setRing(r, SEGMENT.color_from_palette(hue[r], false, false, 0));
   }
-  FastLED.delay(SPEED);
+//   FastLED.delay(SPEED);
   if (INWARD) {
     for (int r = 0; r < RINGS; r++) {
       hue[(r - 1)] = hue[r]; // set ring one less to that of the outer
@@ -75,20 +78,23 @@ uint16_t mode_Rings() {
     }
     hue[0] += JUMP;
   }
+  return FRAMETIME; // TODO
 }
 
 uint16_t mode_SimpleRings() {
   int JUMP = map(SEGMENT.custom1, 0, 255, 1, 16); // TODO: set range
-  static int j;
+  static uint8_t j;
   for (int r = 0; r < RINGS; r++) {
     setRing(r, SEGMENT.color_from_palette(j + (r * JUMP), false, false, 0));
   }
   j += JUMP;
-  FastLED.delay(SPEED);
+//   FastLED.delay(SPEED);
+  return FRAMETIME_FIXED_SLOW; // TODO
 }
 
 
 uint16_t mode_RandomFlow() {
+  static int hue[RINGS];
   hue[0] = random(0, 255);
   for (int r = 0; r < RINGS; r++) {
     setRing(r, CHSV(hue[r], 255, 255));
@@ -96,17 +102,30 @@ uint16_t mode_RandomFlow() {
   for (int r = (RINGS - 1); r >= 1; r--) {
     hue[r] = hue[(r - 1)]; // set this ruing based on the inner
   }
-  FastLED.delay(SPEED);
+//   FastLED.delay(SPEED);
+  return FRAMETIME_FIXED_SLOW; // TODO
 }
 
 
 uint16_t mode_AudioRings() {
 
-  bool newReading = true; // TODO
+  bool newReading = false; // TODO
   bool INWARD = (SEGMENT.custom1 > 125) ? true  : false;
 
+  uint8_t secondHand = micros()/(256-SEGMENT.speed)/500+1 % 64;
+  if((SEGMENT.speed > 254) || (SEGENV.aux0 != secondHand)) {   // WLEDMM allow run run at full speed
+    SEGENV.aux0 = secondHand;
+    newReading = true;
+  }
+
   if(newReading) {
-    newReading = false;
+    um_data_t *um_data;
+    if (!usermods.getUMData(&um_data, USERMOD_ID_AUDIOREACTIVE)) {
+      // add support for no audio
+      um_data = simulateSound(SEGMENT.soundSim);
+    }
+    uint8_t *fftResult = (uint8_t*)um_data->u_data[2];
+
     for (int i = 0; i < 7; i++) {
 
       uint8_t val;
@@ -130,6 +149,7 @@ uint16_t mode_AudioRings() {
     setRingFromFtt(0, 8); // set outer ring to base
 
   }
+  return FRAMETIME;
 }
 
 
