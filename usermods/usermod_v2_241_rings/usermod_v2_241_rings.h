@@ -39,17 +39,28 @@ void setRing(int ring, CRGB colour) {
 }
 
 void setRingFromFtt(int index, int ring) {
+  um_data_t *um_data;
+  if (!usermods.getUMData(&um_data, USERMOD_ID_AUDIOREACTIVE)) {
+    // add support for no audio
+    um_data = simulateSound(SEGMENT.soundSim);
+  }
+  uint8_t *fftResult = (uint8_t*)um_data->u_data[2];
+
   uint8_t val = fftResult[index];
   // Visualize leds to the beat
-  CRGB color = ColorFromPalette(currentPalette, val, 255, currentBlending);
+  CRGB color =  SEGMENT.color_from_palette(val, false, false, 0);
   color.nscale8_video(val);
   setRing(ring, color);
 }
 
 
 uint16_t mode_Rings() {
+  
+  int JUMP = map(SEGMENT.custom1, 0, 255, 1, 16); // TODO: set range
+  bool INWARD = (SEGMENT.custom2 > 125) ? true  : false;
+
   for (int r = 0; r < RINGS; r++) {
-    setRing(r, ColorFromPalette(currentPalette, hue[r], 255, currentBlending));
+    setRing(r, SEGMENT.color_from_palette(hue[r], false, false, 0));
   }
   FastLED.delay(SPEED);
   if (INWARD) {
@@ -67,9 +78,10 @@ uint16_t mode_Rings() {
 }
 
 uint16_t mode_SimpleRings() {
+  int JUMP = map(SEGMENT.custom1, 0, 255, 1, 16); // TODO: set range
   static int j;
   for (int r = 0; r < RINGS; r++) {
-    setRing(r, ColorFromPalette(currentPalette, j + (r * JUMP), 255, currentBlending));
+    setRing(r, SEGMENT.color_from_palette(j + (r * JUMP), false, false, 0));
   }
   j += JUMP;
   FastLED.delay(SPEED);
@@ -89,11 +101,10 @@ uint16_t mode_RandomFlow() {
 
 
 uint16_t mode_AudioRings() {
-//   if(!audioRec && pgm == 0 && millis() > 5000) {
-//     Serial.println("Skip audioRings as no data");
-// //    autopgm++;
-//     autopgm = random(1, (gPatternCount - 1));
-//   }
+
+  bool newReading = true; // TODO
+  bool INWARD = (SEGMENT.custom1 > 125) ? true  : false;
+
   if(newReading) {
     newReading = false;
     for (int i = 0; i < 7; i++) {
@@ -108,7 +119,7 @@ uint16_t mode_AudioRings() {
       }
   
       // Visualize leds to the beat
-      CRGB color = ColorFromPalette(currentPalette, val, val, currentBlending);
+      CRGB color = SEGMENT.color_from_palette(val, false, false, 0, val);
 //      CRGB color = ColorFromPalette(currentPalette, val, 255, currentBlending);
 //      color.nscale8_video(val);
       setRing(i, color);
