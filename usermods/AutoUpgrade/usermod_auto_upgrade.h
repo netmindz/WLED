@@ -6,7 +6,7 @@
 
 #define RELEASE_URL "https://github.com/MoonModules/WLED/releases/latest"
 
-GitHubOTA OsOta("0.0.1", RELEASE_URL, WLED_RELEASE_NAME + ".bin");
+GitHubOTA OsOta("0.0.1", RELEASE_URL, releaseString);
 
 class AutoUpgradeUsermod : public Usermod {
 
