@@ -1482,16 +1482,17 @@ class AudioReactive : public Usermod {
 
       if(audioSyncEnabled == 3) { // Send using ESP-NOW
         // Send message via ESP-NOW
-        Serial.printf("esp_now_send(%u)\n", transmitData.frameCounter);
+        Serial.printf("esp_now_send(%u) - ", transmitData.frameCounter);
         esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *) &transmitData, sizeof(transmitData));
         if (result == ESP_OK) {
           Serial.println("Sent with success");
         }
         else {
-          Serial.println("Error sending the data");
+          Serial.printf("Error sending the data error(%d) = %s\n", result, esp_err_to_name(result));
         }
       }
       else {
+        Serial.printf("beginMulticastPacket(%u)\n", transmitData.frameCounter);
         if (fftUdp.beginMulticastPacket() != 0) { // beginMulticastPacket returns 0 in case of error
           fftUdp.write(reinterpret_cast<uint8_t *>(&transmitData), sizeof(transmitData));
           fftUdp.endPacket();
@@ -1851,8 +1852,13 @@ class AudioReactive : public Usermod {
       }
       
       if(audioSyncEnabled == 3) {
-        DEBUGSR_PRINTLN(F("AR connected(): audioSyncEnabled == 3"));
-        udpSyncConnected = true; // TODO: better name this flag 
+        if (esp_now_init() != ESP_OK) {
+          DEBUGSR_PRINTLN("Error initializing ESP-NOW");
+          udpSyncConnected = false;
+        }
+        else {
+          udpSyncConnected = true; // TODO: better name this flag 
+        }
       }
       else if (audioSyncPort > 0 && (audioSyncEnabled & 0x03)) {
       #ifdef ARDUINO_ARCH_ESP32
