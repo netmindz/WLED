@@ -2735,10 +2735,14 @@ class AudioReactive : public Usermod {
       oappend(SET_F("addOption(dd,'Off',0);"));
 #ifdef ARDUINO_ARCH_ESP32
       oappend(SET_F("addOption(dd,'Send (UDP)',1);"));
+      #ifndef WLED_DISABLE_ESPNOW
       oappend(SET_F("addOption(dd,'Send (ESP-NOW)',3);"));
+      #endif
 #endif
       oappend(SET_F("addOption(dd,'Receive (UDP)',2);"));
+      #ifndef WLED_DISABLE_ESPNOW
       oappend(SET_F("addOption(dd,'Receive (ESP-NOW)',4);"));
+      #endif
       oappend(SET_F("addInfo('AudioReactive:sync:mode',1,'<br> Sync audio data with other WLEDs');"));
 
       oappend(SET_F("addInfo('AudioReactive:digitalmic:type',1,'<i>requires reboot!</i>');"));  // 0 is field type, 1 is actual field
