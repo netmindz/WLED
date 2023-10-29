@@ -1520,44 +1520,6 @@ class AudioReactive : public Usermod {
       return strncmp_P(header, UDP_SYNC_HEADER_v1, 6) == 0;
     }
 
-    void decodeAudioData(int packetSize, uint8_t *fftBuff) {
-      audioSyncPacket *receivedPacket = reinterpret_cast<audioSyncPacket*>(fftBuff);
-
-      static uint8_t lastFrameCounter = 0;
-      if(receivedPacket->frameCounter <= lastFrameCounter && receivedPacket->frameCounter != 0) { // TODO: might need extra checks here
-        DEBUGSR_PRINTF("Skipping audio frame out of order or duplicated - %u vs %u\n", lastFrameCounter, receivedPacket->frameCounter);
-        return;
-      }
-      else {
-        lastFrameCounter = receivedPacket->frameCounter;
-      }
-
-      // update samples for effects
-      volumeSmth   = fmaxf(receivedPacket->sampleSmth, 0.0f);
-      volumeRaw    = fmaxf(receivedPacket->sampleRaw, 0.0f);
-#ifdef ARDUINO_ARCH_ESP32
-      // update internal samples
-      sampleRaw    = volumeRaw;
-      sampleAvg    = volumeSmth;
-      rawSampleAgc = volumeRaw;
-      sampleAgc    = volumeSmth;
-      multAgc      = 1.0f;
-#endif
-      // Only change samplePeak IF it's currently false.
-      // If it's true already, then the animation still needs to respond.
-      autoResetPeak();
-      if (!samplePeak) {
-            samplePeak = receivedPacket->samplePeak >0 ? true:false;
-            if (samplePeak) timeOfPeak = millis();
-            //userVar1 = samplePeak;
-      }
-      //These values are only computed by ESP32
-      for (int i = 0; i < NUM_GEQ_CHANNELS; i++) fftResult[i] = receivedPacket->fftResult[i];
-      my_magnitude  = fmaxf(receivedPacket->FFT_Magnitude, 0.0f);
-      FFT_Magnitude = my_magnitude;
-      FFT_MajorPeak = constrain(receivedPacket->FFT_MajorPeak, 1.0f, 11025.0f);  // restrict value to range expected by effects
-    }
-
     void decodeAudioData_v1(int packetSize, uint8_t *fftBuff) {
       audioSyncPacket_v1 *receivedPacket = reinterpret_cast<audioSyncPacket_v1*>(fftBuff);
       // update samples for effects
@@ -2818,9 +2780,49 @@ class AudioReactive : public Usermod {
     {
       return USERMOD_ID_AUDIOREACTIVE;
     }
+
+    static void decodeAudioData(int packetSize, uint8_t *fftBuff) {
+      audioSyncPacket *receivedPacket = reinterpret_cast<audioSyncPacket*>(fftBuff);
+
+      static uint8_t lastFrameCounter = 0;
+      if(receivedPacket->frameCounter <= lastFrameCounter && receivedPacket->frameCounter != 0) { // TODO: might need extra checks here
+        DEBUGSR_PRINTF("Skipping audio frame out of order or duplicated - %u vs %u\n", lastFrameCounter, receivedPacket->frameCounter);
+        return;
+      }
+      else {
+        lastFrameCounter = receivedPacket->frameCounter;
+        DEBUGSR_PRINTF("frameCounter: %u\n", lastFrameCounter);
+      }
+
+      // update samples for effects
+      volumeSmth   = fmaxf(receivedPacket->sampleSmth, 0.0f);
+      // volumeRaw    = fmaxf(receivedPacket->sampleRaw, 0.0f);
+#ifdef ARDUINO_ARCH_ESP32
+      // update internal samples
+      // sampleRaw    = volumeRaw;
+      sampleAvg    = volumeSmth;
+      // rawSampleAgc = volumeRaw;
+      sampleAgc    = volumeSmth;
+      multAgc      = 1.0f;
+#endif
+      // Only change samplePeak IF it's currently false.
+      // If it's true already, then the animation still needs to respond.
+      autoResetPeak();
+      if (!samplePeak) {
+            samplePeak = receivedPacket->samplePeak >0 ? true:false;
+            if (samplePeak) timeOfPeak = millis();
+            //userVar1 = samplePeak;
+      }
+      //These values are only computed by ESP32
+      for (int i = 0; i < NUM_GEQ_CHANNELS; i++) fftResult[i] = receivedPacket->fftResult[i];
+      float my_magnitude  = fmaxf(receivedPacket->FFT_Magnitude, 0.0f);
+      // FFT_Magnitude = my_magnitude;
+      FFT_MajorPeak = constrain(receivedPacket->FFT_MajorPeak, 1.0f, 11025.0f);  // restrict value to range expected by effects
+    }
 };
 void OnDataRecvAudio(const uint8_t * mac, const uint8_t *incomingData, int len) {
-  Serial.println("OnDataRecv");
+  uint8_t * bptr = (uint8_t*)&incomingData;
+  AudioReactive::decodeAudioData(len, bptr);
 }
 // strings to reduce flash memory usage (used more than twice)
 const char AudioReactive::_name[]       PROGMEM = "AudioReactive";
