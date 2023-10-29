@@ -92,6 +92,8 @@ static bool udpSyncConnected = false;         // UDP connection status -> true i
 
 #define NUM_GEQ_CHANNELS 16                                           // number of frequency channels. Don't change !!
 
+uint8_t broadcastAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+
 // audioreactive variables
 #ifdef ARDUINO_ARCH_ESP32
 static float    micDataReal = 0.0f;             // MicIn data with full 24bit resolution - lowest 8bit after decimal point
@@ -1478,13 +1480,27 @@ class AudioReactive : public Usermod {
       transmitData.FFT_Magnitude = my_magnitude;
       transmitData.FFT_MajorPeak = FFT_MajorPeak;
 
-      if (fftUdp.beginMulticastPacket() != 0) { // beginMulticastPacket returns 0 in case of error
-        fftUdp.write(reinterpret_cast<uint8_t *>(&transmitData), sizeof(transmitData));
-        fftUdp.endPacket();
+      if(audioSyncEnabled == 3) { // Send using ESP-NOW
+        // Send message via ESP-NOW
+        Serial.printf("esp_now_send(%u)\n", transmitData.frameCounter);
+        esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *) &transmitData, sizeof(transmitData));
+        if (result == ESP_OK) {
+          Serial.println("Sent with success");
+        }
+        else {
+          Serial.println("Error sending the data");
+        }
+      }
+      else {
+        if (fftUdp.beginMulticastPacket() != 0) { // beginMulticastPacket returns 0 in case of error
+          fftUdp.write(reinterpret_cast<uint8_t *>(&transmitData), sizeof(transmitData));
+          fftUdp.endPacket();
+        }
       }
       
       frameCounter++;
     } // transmitAudioData()
+    
 #endif
     static bool isValidUdpSyncVersion(const char *header) {
       return strncmp_P(header, UDP_SYNC_HEADER, 6) == 0;
@@ -1834,7 +1850,11 @@ class AudioReactive : public Usermod {
         DEBUGSR_PRINTLN(F("AR connected(): old UDP connection closed."));
       }
       
-      if (audioSyncPort > 0 && (audioSyncEnabled & 0x03)) {
+      if(audioSyncEnabled == 3) {
+        DEBUGSR_PRINTLN(F("AR connected(): audioSyncEnabled == 3"));
+        udpSyncConnected = true; // TODO: better name this flag 
+      }
+      else if (audioSyncPort > 0 && (audioSyncEnabled & 0x03)) {
       #ifdef ARDUINO_ARCH_ESP32
         udpSyncConnected = fftUdp.beginMulticast(IPAddress(239, 0, 0, 1), audioSyncPort);
       #else
@@ -2235,6 +2255,17 @@ class AudioReactive : public Usermod {
           infoArr.add(F("sound sync Off"));
         }
 #else  // ESP32 only
+        } else if (audioSyncEnabled & 0x04) {
+          infoArr = user.createNestedArray(F("Audio Source"));
+          infoArr.add(F("ESP-NOW sound sync"));
+          // if (udpSyncConnected) {
+          //   if (millis() - last_UDPTime < 2500)
+          //     infoArr.add(F(" - receiving"));
+          //   else
+          //     infoArr.add(F(" - idle"));
+          // } else {
+          //   infoArr.add(F(" - no connection"));
+          // }
         } else {
           // Analog or I2S digital input
           if (audioSource && (audioSource->isInitialized())) {
@@ -2284,13 +2315,17 @@ class AudioReactive : public Usermod {
         }
 #endif
         // UDP Sound Sync status
-        infoArr = user.createNestedArray(F("UDP Sound Sync"));
+        infoArr = user.createNestedArray(F("Sound Sync"));
         if (audioSyncEnabled) {
-          if (audioSyncEnabled & 0x01) {
-            infoArr.add(F("send mode"));
+          if (audioSyncEnabled == 1) {
+            infoArr.add(F("UDP send mode"));
             if ((udpSyncConnected) && (millis() - lastTime < 2500)) infoArr.add(F(" v2"));
-          } else if (audioSyncEnabled & 0x02) {
-              infoArr.add(F("receive mode"));
+          } else if (audioSyncEnabled == 2) {
+              infoArr.add(F("UDP receive mode"));
+          } else if (audioSyncEnabled == 3) {
+              infoArr.add(F("ESP-NOW send mode"));
+          } else if (audioSyncEnabled == 4) {
+              infoArr.add(F("ESP-NOW receive mode"));
           }
         } else
           infoArr.add("off");
@@ -2689,9 +2724,11 @@ class AudioReactive : public Usermod {
       oappend(SET_F("dd=addDropdown('AudioReactive','sync:mode');"));
       oappend(SET_F("addOption(dd,'Off',0);"));
 #ifdef ARDUINO_ARCH_ESP32
-      oappend(SET_F("addOption(dd,'Send',1);"));
+      oappend(SET_F("addOption(dd,'Send (UDP)',1);"));
+      oappend(SET_F("addOption(dd,'Send (ESP-NOW)',3);"));
 #endif
-      oappend(SET_F("addOption(dd,'Receive',2);"));
+      oappend(SET_F("addOption(dd,'Receive (UDP)',2);"));
+      oappend(SET_F("addOption(dd,'Receive (ESP-NOW)',4);"));
       oappend(SET_F("addInfo('AudioReactive:sync:mode',1,'<br> Sync audio data with other WLEDs');"));
 
       oappend(SET_F("addInfo('AudioReactive:digitalmic:type',1,'<i>requires reboot!</i>');"));  // 0 is field type, 1 is actual field
