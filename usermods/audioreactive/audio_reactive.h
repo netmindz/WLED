@@ -1481,6 +1481,7 @@ class AudioReactive : public Usermod {
       transmitData.FFT_MajorPeak = FFT_MajorPeak;
 
       if(audioSyncEnabled == 3) { // Send using ESP-NOW
+        #ifndef WLED_DISABLE_ESPNOW
         // Send message via ESP-NOW
         Serial.printf("esp_now_send(%u) - ", transmitData.frameCounter);
         esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *) &transmitData, sizeof(transmitData));
@@ -1488,8 +1489,9 @@ class AudioReactive : public Usermod {
           Serial.println("Sent with success");
         }
         else {
-          Serial.printf("Error sending the data error(%d) = %s\n", result, esp_err_to_name(result));
+          Serial.printf("Error sending the data error(%x) = %s\n", result, esp_err_to_name(result));
         }
+        #endif
       }
       else {
         Serial.printf("beginMulticastPacket(%u)\n", transmitData.frameCounter);
@@ -1852,6 +1854,7 @@ class AudioReactive : public Usermod {
       }
       
       if(audioSyncEnabled == 3) {
+        #ifndef  WLED_DISABLE_ESPNOW
         if (esp_now_init() != ESP_OK) {
           DEBUGSR_PRINTLN("Error initializing ESP-NOW");
           udpSyncConnected = false;
@@ -1859,6 +1862,7 @@ class AudioReactive : public Usermod {
         else {
           udpSyncConnected = true; // TODO: better name this flag 
         }
+        #endif
       }
       else if (audioSyncPort > 0 && (audioSyncEnabled & 0x03)) {
       #ifdef ARDUINO_ARCH_ESP32
