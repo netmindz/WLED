@@ -2002,7 +2002,7 @@ class AudioReactive : public Usermod {
       connectUDPSoundSync();  // ensure we have a connection - if needed
 
       // UDP Microphone Sync  - receive mode
-      if ((audioSyncEnabled & 0x02) && udpSyncConnected) {
+      if ((audioSyncEnabled == 2) && udpSyncConnected) {
           // Only run the audio listener code if we're in Receive mode
           static float syncVolumeSmth = 0;
           bool have_new_sample = false;
@@ -2067,8 +2067,8 @@ class AudioReactive : public Usermod {
 #endif
 
 #ifdef ARDUINO_ARCH_ESP32
-      //UDP Microphone Sync  - transmit mode
-      if ((audioSyncEnabled & 0x01) && (millis() - lastTime > 20)) {
+      // Audio Sync  - transmit mode
+      if (((audioSyncEnabled == 1) || (audioSyncEnabled == 3)) && (millis() - lastTime > 20)) {
         // Only run the transmit code IF we're in Transmit mode
         transmitAudioData();
         lastTime = millis();
