@@ -964,17 +964,6 @@ class AudioReactive : public Usermod {
     int8_t mclkPin = MCLK_PIN;
     #endif
 #endif
-    // new "V2" audiosync struct - 40 Bytes
-    struct audioSyncPacket {
-      char    header[6];      //  06 Bytes
-      float   sampleRaw;      //  04 Bytes  - either "sampleRaw" or "rawSampleAgc" depending on soundAgc setting
-      float   sampleSmth;     //  04 Bytes  - either "sampleAvg" or "sampleAgc" depending on soundAgc setting
-      uint8_t samplePeak;     //  01 Bytes  - 0 no peak; >=1 peak detected. In future, this will also provide peak Magnitude
-      uint8_t frameCounter;   //  01 Bytes  - track duplicate/out of order packets
-      uint8_t fftResult[16];  //  16 Bytes
-      float  FFT_Magnitude;   //  04 Bytes
-      float  FFT_MajorPeak;   //  04 Bytes
-    };
 
     // old "V1" audiosync struct - 83 Bytes - for backwards compatibility
     struct audioSyncPacket_v1 {
@@ -2781,9 +2770,24 @@ class AudioReactive : public Usermod {
       return USERMOD_ID_AUDIOREACTIVE;
     }
 
+    // new "V2" audiosync struct - 40 Bytes
+    struct audioSyncPacket {
+      char    header[6];      //  06 Bytes
+      float   sampleRaw;      //  04 Bytes  - either "sampleRaw" or "rawSampleAgc" depending on soundAgc setting
+      float   sampleSmth;     //  04 Bytes  - either "sampleAvg" or "sampleAgc" depending on soundAgc setting
+      uint8_t samplePeak;     //  01 Bytes  - 0 no peak; >=1 peak detected. In future, this will also provide peak Magnitude
+      uint8_t frameCounter;   //  01 Bytes  - track duplicate/out of order packets
+      uint8_t fftResult[16];  //  16 Bytes
+      float  FFT_Magnitude;   //  04 Bytes
+      float  FFT_MajorPeak;   //  04 Bytes
+    };
+
     static void decodeAudioData(int packetSize, uint8_t *fftBuff) {
       audioSyncPacket *receivedPacket = reinterpret_cast<audioSyncPacket*>(fftBuff);
+      handleAudioSyncPacket(receivedPacket);
+    }
 
+    static void handleAudioSyncPacket(AudioReactive::audioSyncPacket *receivedPacket) {
       static uint8_t lastFrameCounter = 0;
       if(receivedPacket->frameCounter <= lastFrameCounter && receivedPacket->frameCounter != 0) { // TODO: might need extra checks here
         DEBUGSR_PRINTF("Skipping audio frame out of order or duplicated - %u vs %u\n", lastFrameCounter, receivedPacket->frameCounter);
@@ -2821,8 +2825,12 @@ class AudioReactive : public Usermod {
     }
 };
 void OnDataRecvAudio(const uint8_t * mac, const uint8_t *incomingData, int len) {
-  uint8_t * bptr = (uint8_t*)&incomingData;
-  AudioReactive::decodeAudioData(len, bptr);
+  AudioReactive::audioSyncPacket* receivedPacket;
+  memcpy(&receivedPacket, incomingData, sizeof(receivedPacket));
+  // Serial.printf("OnDataRecvAudio len=%u\n", len);
+  if(len == 44) {
+    AudioReactive::handleAudioSyncPacket(receivedPacket);
+  }
 }
 // strings to reduce flash memory usage (used more than twice)
 const char AudioReactive::_name[]       PROGMEM = "AudioReactive";
