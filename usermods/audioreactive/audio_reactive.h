@@ -910,6 +910,8 @@ static void autoResetPeak(void) {
   }
 }
 
+void OnDataRecvAudio(const uint8_t * mac, const uint8_t *incomingData, int len);
+
 ////////////////////
 // usermod class  //
 ////////////////////
@@ -1483,13 +1485,19 @@ class AudioReactive : public Usermod {
       if(audioSyncEnabled == 3) { // Send using ESP-NOW
         #ifndef WLED_DISABLE_ESPNOW
         // Send message via ESP-NOW
-        Serial.printf("esp_now_send(%u) - ", transmitData.frameCounter);
+        esp_now_peer_info_t peerInfo = {};
+        memcpy(&peerInfo.peer_addr, broadcastAddress, 6);
+        if (!esp_now_is_peer_exist(broadcastAddress)) {
+          esp_now_add_peer(&peerInfo);
+        }
         esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *) &transmitData, sizeof(transmitData));
         if (result == ESP_OK) {
-          Serial.println("Sent with success");
+          // DEBUGSR_PRINTF("esp_now_send(%u) - ", transmitData.frameCounter);
+          // DEBUGSR_PRINTF("Sent with success");
         }
         else {
-          Serial.printf("Error sending the data error(%x) = %s\n", result, esp_err_to_name(result));
+          DEBUGSR_PRINTF("esp_now_send(%u) - ", transmitData.frameCounter);
+          DEBUGSR_PRINTF("Error sending the data error(%x) = %s\n", result, esp_err_to_name(result));
         }
         #endif
       }
@@ -1853,7 +1861,7 @@ class AudioReactive : public Usermod {
         DEBUGSR_PRINTLN(F("AR connected(): old UDP connection closed."));
       }
       
-      if(audioSyncEnabled == 3) {
+      if(audioSyncEnabled == 3 || audioSyncEnabled == 4) {
         #ifndef  WLED_DISABLE_ESPNOW
         if (esp_now_init() != ESP_OK) {
           DEBUGSR_PRINTLN("Error initializing ESP-NOW");
@@ -1862,6 +1870,7 @@ class AudioReactive : public Usermod {
         else {
           udpSyncConnected = true; // TODO: better name this flag 
         }
+        esp_now_register_recv_cb(OnDataRecvAudio);
         #endif
       }
       else if (audioSyncPort > 0 && (audioSyncEnabled & 0x03)) {
@@ -2810,7 +2819,9 @@ class AudioReactive : public Usermod {
       return USERMOD_ID_AUDIOREACTIVE;
     }
 };
-
+void OnDataRecvAudio(const uint8_t * mac, const uint8_t *incomingData, int len) {
+  Serial.println("OnDataRecv");
+}
 // strings to reduce flash memory usage (used more than twice)
 const char AudioReactive::_name[]       PROGMEM = "AudioReactive";
 const char AudioReactive::_enabled[]    PROGMEM = "enabled";
