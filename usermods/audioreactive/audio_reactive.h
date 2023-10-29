@@ -2022,7 +2022,7 @@ class AudioReactive : public Usermod {
           receivedFormat = 0;
       }
 
-      if (   (audioSyncEnabled & 0x02) // receive mode
+      if (   (audioSyncEnabled == 2) // receive mode
           && udpSyncConnected          // connected
           && (receivedFormat > 0)      // we actually received something in the past
           && ((millis() - last_UDPTime) > 25000)) {   // close connection after 25sec idle
@@ -2245,7 +2245,7 @@ class AudioReactive : public Usermod {
         // The following can be used for troubleshooting user errors and is so not enclosed in #ifdef WLED_DEBUG
         // current Audio input
         infoArr = user.createNestedArray(F("Audio Source"));
-        if (audioSyncEnabled & 0x02) {
+        if (audioSyncEnabled == 2) {
           // UDP sound sync - receive mode
           infoArr.add(F("UDP sound sync"));
           if (udpSyncConnected) {
@@ -2261,17 +2261,17 @@ class AudioReactive : public Usermod {
           infoArr.add(F("sound sync Off"));
         }
 #else  // ESP32 only
-        } else if (audioSyncEnabled & 0x04) {
+        } else if (audioSyncEnabled == 4) {
           infoArr = user.createNestedArray(F("Audio Source"));
           infoArr.add(F("ESP-NOW sound sync"));
-          // if (udpSyncConnected) {
-          //   if (millis() - last_UDPTime < 2500)
-          //     infoArr.add(F(" - receiving"));
-          //   else
-          //     infoArr.add(F(" - idle"));
-          // } else {
-          //   infoArr.add(F(" - no connection"));
-          // }
+          if (udpSyncConnected) {
+            if (millis() - last_UDPTime < 2500)
+              infoArr.add(F(" - receiving"));
+            else
+              infoArr.add(F(" - idle"));
+          } else {
+            infoArr.add(F(" - no connection"));
+          }
         } else {
           // Analog or I2S digital input
           if (audioSource && (audioSource->isInitialized())) {
