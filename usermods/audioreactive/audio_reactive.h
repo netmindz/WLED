@@ -1475,6 +1475,8 @@ class AudioReactive : public Usermod {
         #ifndef WLED_DISABLE_ESPNOW
         // Send message via ESP-NOW
         esp_now_peer_info_t peerInfo = {};
+        peerInfo.channel = 0;
+        peerInfo.encrypt = false;
         memcpy(&peerInfo.peer_addr, broadcastAddress, 6);
         if (!esp_now_is_peer_exist(broadcastAddress)) {
           esp_now_add_peer(&peerInfo);
@@ -1502,9 +1504,6 @@ class AudioReactive : public Usermod {
     } // transmitAudioData()
     
 #endif
-    static bool isValidUdpSyncVersion(const char *header) {
-      return strncmp_P(header, UDP_SYNC_HEADER, 6) == 0;
-    }
     static bool isValidUdpSyncVersion_v1(const char *header) {
       return strncmp_P(header, UDP_SYNC_HEADER_v1, 6) == 0;
     }
@@ -2795,7 +2794,7 @@ class AudioReactive : public Usermod {
       }
       else {
         lastFrameCounter = receivedPacket->frameCounter;
-        DEBUGSR_PRINTF("frameCounter: %u\n", lastFrameCounter);
+        // DEBUGSR_PRINTF("header: %s frameCounter: %u\n", String(receivedPacket->header), lastFrameCounter);
       }
 
       // update samples for effects
@@ -2823,13 +2822,22 @@ class AudioReactive : public Usermod {
       // FFT_Magnitude = my_magnitude;
       FFT_MajorPeak = constrain(receivedPacket->FFT_MajorPeak, 1.0f, 11025.0f);  // restrict value to range expected by effects
     }
+
+    static bool isValidUdpSyncVersion(const char *header) {
+      return strncmp_P(header, UDP_SYNC_HEADER, 6) == 0;
+    }
 };
 void OnDataRecvAudio(const uint8_t * mac, const uint8_t *incomingData, int len) {
-  AudioReactive::audioSyncPacket* receivedPacket;
-  memcpy(&receivedPacket, incomingData, sizeof(receivedPacket));
-  // Serial.printf("OnDataRecvAudio len=%u\n", len);
-  if(len == 44) {
-    AudioReactive::handleAudioSyncPacket(receivedPacket);
+  bool validData = AudioReactive::isValidUdpSyncVersion((const char *)incomingData);
+  if(validData) {
+    AudioReactive::audioSyncPacket receivedPacket;
+    if(len >= sizeof(receivedPacket)) { // TODO: should be == ?
+      memcpy(&receivedPacket, incomingData, sizeof(receivedPacket));
+      AudioReactive::handleAudioSyncPacket(&receivedPacket);
+    }
+  }
+  else {
+    DEBUGSR_PRINT("E");
   }
 }
 // strings to reduce flash memory usage (used more than twice)
