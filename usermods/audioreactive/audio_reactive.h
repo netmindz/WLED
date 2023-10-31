@@ -1,6 +1,8 @@
 #pragma once
 
 #include "wled.h"
+#include "RunningAverage.h"
+RunningAverage syncAverage(1000);
 
 #ifdef ARDUINO_ARCH_ESP32
 
@@ -911,6 +913,7 @@ static void autoResetPeak(void) {
 }
 
 void OnDataRecvAudio(const uint8_t * mac, const uint8_t *incomingData, int len);
+unsigned long last_UDPTime = 0;    // time of last valid UDP sound sync datapacket
 
 ////////////////////
 // usermod class  //
@@ -1017,7 +1020,6 @@ class AudioReactive : public Usermod {
     float soundPressure = 0;      // Sound Pressure estimation, based on microphone raw readings. 0 ->5db, 255 ->105db
 
     // used to feed "Info" Page
-    unsigned long last_UDPTime = 0;    // time of last valid UDP sound sync datapacket
     int receivedFormat = 0;            // last received UDP sound sync format - 0=none, 1=v1 (0.13.x), 2=v2 (0.14.x)
     float maxSample5sec = 0.0f;        // max sample (after AGC) in last 5 seconds 
     unsigned long sampleMaxTimer = 0;  // last time maxSample5sec was reset
@@ -1971,7 +1973,10 @@ class AudioReactive : public Usermod {
           bool have_new_sample = false;
           if (millis() - lastTime > delayMs) {
             have_new_sample = receiveAudioData();
-            if (have_new_sample) last_UDPTime = millis();
+            if (have_new_sample) {
+              syncAverage.addValue(millis() - last_UDPTime);
+              last_UDPTime = millis();
+            }
             lastTime = millis();
           } else {
 #ifdef ARDUINO_ARCH_ESP32
@@ -2219,6 +2224,7 @@ class AudioReactive : public Usermod {
           } else {
             infoArr.add(F(" - no connection"));
           }
+          Serial.printf("avg=%.3f, min=%.3f, max=%.3f\n", syncAverage.getAverage(), syncAverage.getMinInBuffer(), syncAverage.getMaxInBuffer());
 #ifndef ARDUINO_ARCH_ESP32  // substitute for 8266
         } else {
           infoArr.add(F("sound sync Off"));
@@ -2235,6 +2241,7 @@ class AudioReactive : public Usermod {
           } else {
             infoArr.add(F(" - no connection"));
           }
+          Serial.printf("avg=%.3f, min=%.3f, max=%.3f\n", syncAverage.getAverage(), syncAverage.getMinInBuffer(), syncAverage.getMaxInBuffer());
         } else {
           // Analog or I2S digital input
           if (audioSource && (audioSource->isInitialized())) {
@@ -2834,6 +2841,8 @@ void OnDataRecvAudio(const uint8_t * mac, const uint8_t *incomingData, int len) 
     if(len >= sizeof(receivedPacket)) { // TODO: should be == ?
       memcpy(&receivedPacket, incomingData, sizeof(receivedPacket));
       AudioReactive::handleAudioSyncPacket(&receivedPacket);
+      syncAverage.addValue(millis() - last_UDPTime);
+      last_UDPTime = millis();
     }
   }
   else {
