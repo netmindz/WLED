@@ -446,7 +446,7 @@ void FFTcode(void * parameter)
                         // taskYIELD(), yield(), vTaskDelay() and esp_task_wdt_feed() didn't seem to work.
 
     // Don't run FFT computing code if we're in Receive mode or in realtime mode
-    if (disableSoundProcessing || (audioSyncEnabled & 0x02)) {
+    if (disableSoundProcessing || (audioSyncEnabled == 2)  || (audioSyncEnabled == 4)) {
       isFirstRun = false;
       vTaskDelayUntil( &xLastWakeTime, xFrequency);        // release CPU, and let I2S fill its buffers
       continue;
@@ -1451,7 +1451,10 @@ class AudioReactive : public Usermod {
 #ifdef ARDUINO_ARCH_ESP32
     void transmitAudioData()
     {
-      if (!udpSyncConnected) return;
+      if (!udpSyncConnected) {
+        // DEBUGSR_PRINTLN("transmitAudioData not connected");
+        return;
+      }
       static uint8_t frameCounter = 0;
       //DEBUGSR_PRINTLN("Transmitting UDP Mic Packet");
 
@@ -1822,7 +1825,7 @@ class AudioReactive : public Usermod {
         else {
           udpSyncConnected = true; // TODO: better name this flag 
         }
-        esp_now_register_recv_cb(OnDataRecvAudio);
+        if(audioSyncEnabled == 4) esp_now_register_recv_cb(OnDataRecvAudio);
         #endif
       }
       else if (audioSyncPort > 0 && (audioSyncEnabled & 0x03)) {
@@ -1896,6 +1899,8 @@ class AudioReactive : public Usermod {
 
       if (audioSyncEnabled & 0x02) disableSoundProcessing = true;   // make sure everything is disabled IF in audio Receive mode
       if (audioSyncEnabled & 0x01) disableSoundProcessing = false;  // keep running audio IF we're in audio Transmit mode
+      if (audioSyncEnabled == 3) disableSoundProcessing = false;  // keep running audio IF we're in audio Transmit mode
+      if (audioSyncEnabled == 4) disableSoundProcessing = true;  // make sure everything is disabled IF in audio Receive mode
 #ifdef ARDUINO_ARCH_ESP32
       if (!audioSource->isInitialized()) disableSoundProcessing = true;  // no audio source
 
@@ -1910,7 +1915,7 @@ class AudioReactive : public Usermod {
       #endif
 
       // Only run the sampling code IF we're not in Receive mode or realtime mode
-      if (!(audioSyncEnabled & 0x02) && !disableSoundProcessing) {
+      if (!disableSoundProcessing) {
         if (soundAgc > AGC_NUM_PRESETS) soundAgc = 0; // make sure that AGC preset is valid (to avoid array bounds violation)
 
         unsigned long t_now = millis();      // remember current time
@@ -2215,7 +2220,7 @@ class AudioReactive : public Usermod {
         infoArr = user.createNestedArray(F("Audio Source"));
         if (audioSyncEnabled == 2) {
           // UDP sound sync - receive mode
-          infoArr.add(F("UDP sound sync"));
+          infoArr.add(F("UDP sync"));
           if (udpSyncConnected) {
             if (millis() - last_UDPTime < 2500)
               infoArr.add(F(" - receiving"));
@@ -2232,7 +2237,7 @@ class AudioReactive : public Usermod {
 #else  // ESP32 only
         } else if (audioSyncEnabled == 4) {
           infoArr = user.createNestedArray(F("Audio Source"));
-          infoArr.add(F("ESP-NOW sound sync"));
+          infoArr.add(F("ESP-NOW sync"));
           if (udpSyncConnected) {
             if (millis() - last_UDPTime < 2500)
               infoArr.add(F(" - receiving"));
@@ -2835,6 +2840,7 @@ class AudioReactive : public Usermod {
     }
 };
 void OnDataRecvAudio(const uint8_t * mac, const uint8_t *incomingData, int len) {
+  if(audioSyncEnabled != 4) return;
   bool validData = AudioReactive::isValidUdpSyncVersion((const char *)incomingData);
   if(validData) {
     AudioReactive::audioSyncPacket receivedPacket;
