@@ -1,6 +1,8 @@
 #pragma once
 
 #include "wled.h"
+#include "RunningAverage.h"
+RunningAverage syncAverage(1000);
 
 #ifdef ARDUINO_ARCH_ESP32
 
@@ -91,6 +93,8 @@ static uint8_t audioSyncEnabled = 0;          // bit field: bit 0 - send, bit 1 
 static bool udpSyncConnected = false;         // UDP connection status -> true if connected to multicast group
 
 #define NUM_GEQ_CHANNELS 16                                           // number of frequency channels. Don't change !!
+
+uint8_t broadcastAddress[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 
 // audioreactive variables
 #ifdef ARDUINO_ARCH_ESP32
@@ -442,7 +446,7 @@ void FFTcode(void * parameter)
                         // taskYIELD(), yield(), vTaskDelay() and esp_task_wdt_feed() didn't seem to work.
 
     // Don't run FFT computing code if we're in Receive mode or in realtime mode
-    if (disableSoundProcessing || (audioSyncEnabled & 0x02)) {
+    if (disableSoundProcessing || (audioSyncEnabled == 2)  || (audioSyncEnabled == 4)) {
       isFirstRun = false;
       vTaskDelayUntil( &xLastWakeTime, xFrequency);        // release CPU, and let I2S fill its buffers
       continue;
@@ -908,6 +912,9 @@ static void autoResetPeak(void) {
   }
 }
 
+void OnDataRecvAudio(const uint8_t * mac, const uint8_t *incomingData, int len);
+unsigned long last_UDPTime = 0;    // time of last valid UDP sound sync datapacket
+
 ////////////////////
 // usermod class  //
 ////////////////////
@@ -960,17 +967,6 @@ class AudioReactive : public Usermod {
     int8_t mclkPin = MCLK_PIN;
     #endif
 #endif
-    // new "V2" audiosync struct - 40 Bytes
-    struct audioSyncPacket {
-      char    header[6];      //  06 Bytes
-      float   sampleRaw;      //  04 Bytes  - either "sampleRaw" or "rawSampleAgc" depending on soundAgc setting
-      float   sampleSmth;     //  04 Bytes  - either "sampleAvg" or "sampleAgc" depending on soundAgc setting
-      uint8_t samplePeak;     //  01 Bytes  - 0 no peak; >=1 peak detected. In future, this will also provide peak Magnitude
-      uint8_t frameCounter;   //  01 Bytes  - track duplicate/out of order packets
-      uint8_t fftResult[16];  //  16 Bytes
-      float  FFT_Magnitude;   //  04 Bytes
-      float  FFT_MajorPeak;   //  04 Bytes
-    };
 
     // old "V1" audiosync struct - 83 Bytes - for backwards compatibility
     struct audioSyncPacket_v1 {
@@ -1024,7 +1020,6 @@ class AudioReactive : public Usermod {
     float soundPressure = 0;      // Sound Pressure estimation, based on microphone raw readings. 0 ->5db, 255 ->105db
 
     // used to feed "Info" Page
-    unsigned long last_UDPTime = 0;    // time of last valid UDP sound sync datapacket
     int receivedFormat = 0;            // last received UDP sound sync format - 0=none, 1=v1 (0.13.x), 2=v2 (0.14.x)
     float maxSample5sec = 0.0f;        // max sample (after AGC) in last 5 seconds 
     unsigned long sampleMaxTimer = 0;  // last time maxSample5sec was reset
@@ -1456,7 +1451,10 @@ class AudioReactive : public Usermod {
 #ifdef ARDUINO_ARCH_ESP32
     void transmitAudioData()
     {
-      if (!udpSyncConnected) return;
+      if (!udpSyncConnected) {
+        // DEBUGSR_PRINTLN("transmitAudioData not connected");
+        return;
+      }
       static uint8_t frameCounter = 0;
       //DEBUGSR_PRINTLN("Transmitting UDP Mic Packet");
 
@@ -1478,57 +1476,41 @@ class AudioReactive : public Usermod {
       transmitData.FFT_Magnitude = my_magnitude;
       transmitData.FFT_MajorPeak = FFT_MajorPeak;
 
-      if (fftUdp.beginMulticastPacket() != 0) { // beginMulticastPacket returns 0 in case of error
-        fftUdp.write(reinterpret_cast<uint8_t *>(&transmitData), sizeof(transmitData));
-        fftUdp.endPacket();
+      if(audioSyncEnabled == 3) { // Send using ESP-NOW
+        #ifndef WLED_DISABLE_ESPNOW
+        // Send message via ESP-NOW
+        esp_now_peer_info_t peerInfo = {};
+        peerInfo.channel = 0;
+        peerInfo.encrypt = false;
+        memcpy(&peerInfo.peer_addr, broadcastAddress, 6);
+        if (!esp_now_is_peer_exist(broadcastAddress)) {
+          esp_now_add_peer(&peerInfo);
+        }
+        esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *) &transmitData, sizeof(transmitData));
+        if (result == ESP_OK) {
+          // DEBUGSR_PRINTF("esp_now_send(%u) - ", transmitData.frameCounter);
+          // DEBUGSR_PRINTF("Sent with success");
+        }
+        else {
+          DEBUGSR_PRINTF("esp_now_send(%u) - ", transmitData.frameCounter);
+          DEBUGSR_PRINTF("Error sending the data error(%x) = %s\n", result, esp_err_to_name(result));
+        }
+        #endif
+      }
+      else {
+        Serial.printf("beginMulticastPacket(%u)\n", transmitData.frameCounter);
+        if (fftUdp.beginMulticastPacket() != 0) { // beginMulticastPacket returns 0 in case of error
+          fftUdp.write(reinterpret_cast<uint8_t *>(&transmitData), sizeof(transmitData));
+          fftUdp.endPacket();
+        }
       }
       
       frameCounter++;
     } // transmitAudioData()
+    
 #endif
-    static bool isValidUdpSyncVersion(const char *header) {
-      return strncmp_P(header, UDP_SYNC_HEADER, 6) == 0;
-    }
     static bool isValidUdpSyncVersion_v1(const char *header) {
       return strncmp_P(header, UDP_SYNC_HEADER_v1, 6) == 0;
-    }
-
-    void decodeAudioData(int packetSize, uint8_t *fftBuff) {
-      audioSyncPacket *receivedPacket = reinterpret_cast<audioSyncPacket*>(fftBuff);
-
-      static uint8_t lastFrameCounter = 0;
-      if(receivedPacket->frameCounter <= lastFrameCounter && receivedPacket->frameCounter != 0) { // TODO: might need extra checks here
-        DEBUGSR_PRINTF("Skipping audio frame out of order or duplicated - %u vs %u\n", lastFrameCounter, receivedPacket->frameCounter);
-        return;
-      }
-      else {
-        lastFrameCounter = receivedPacket->frameCounter;
-      }
-
-      // update samples for effects
-      volumeSmth   = fmaxf(receivedPacket->sampleSmth, 0.0f);
-      volumeRaw    = fmaxf(receivedPacket->sampleRaw, 0.0f);
-#ifdef ARDUINO_ARCH_ESP32
-      // update internal samples
-      sampleRaw    = volumeRaw;
-      sampleAvg    = volumeSmth;
-      rawSampleAgc = volumeRaw;
-      sampleAgc    = volumeSmth;
-      multAgc      = 1.0f;
-#endif
-      // Only change samplePeak IF it's currently false.
-      // If it's true already, then the animation still needs to respond.
-      autoResetPeak();
-      if (!samplePeak) {
-            samplePeak = receivedPacket->samplePeak >0 ? true:false;
-            if (samplePeak) timeOfPeak = millis();
-            //userVar1 = samplePeak;
-      }
-      //These values are only computed by ESP32
-      for (int i = 0; i < NUM_GEQ_CHANNELS; i++) fftResult[i] = receivedPacket->fftResult[i];
-      my_magnitude  = fmaxf(receivedPacket->FFT_Magnitude, 0.0f);
-      FFT_Magnitude = my_magnitude;
-      FFT_MajorPeak = constrain(receivedPacket->FFT_MajorPeak, 1.0f, 11025.0f);  // restrict value to range expected by effects
     }
 
     void decodeAudioData_v1(int packetSize, uint8_t *fftBuff) {
@@ -1834,7 +1816,19 @@ class AudioReactive : public Usermod {
         DEBUGSR_PRINTLN(F("AR connected(): old UDP connection closed."));
       }
       
-      if (audioSyncPort > 0 && (audioSyncEnabled & 0x03)) {
+      if(audioSyncEnabled == 3 || audioSyncEnabled == 4) {
+        #ifndef  WLED_DISABLE_ESPNOW
+        if (esp_now_init() != ESP_OK) {
+          DEBUGSR_PRINTLN("Error initializing ESP-NOW");
+          udpSyncConnected = false;
+        }
+        else {
+          udpSyncConnected = true; // TODO: better name this flag 
+        }
+        if(audioSyncEnabled == 4) esp_now_register_recv_cb(OnDataRecvAudio);
+        #endif
+      }
+      else if (audioSyncPort > 0 && (audioSyncEnabled & 0x03)) {
       #ifdef ARDUINO_ARCH_ESP32
         udpSyncConnected = fftUdp.beginMulticast(IPAddress(239, 0, 0, 1), audioSyncPort);
       #else
@@ -1905,6 +1899,8 @@ class AudioReactive : public Usermod {
 
       if (audioSyncEnabled & 0x02) disableSoundProcessing = true;   // make sure everything is disabled IF in audio Receive mode
       if (audioSyncEnabled & 0x01) disableSoundProcessing = false;  // keep running audio IF we're in audio Transmit mode
+      if (audioSyncEnabled == 3) disableSoundProcessing = false;  // keep running audio IF we're in audio Transmit mode
+      if (audioSyncEnabled == 4) disableSoundProcessing = true;  // make sure everything is disabled IF in audio Receive mode
 #ifdef ARDUINO_ARCH_ESP32
       if (!audioSource->isInitialized()) disableSoundProcessing = true;  // no audio source
 
@@ -1919,7 +1915,7 @@ class AudioReactive : public Usermod {
       #endif
 
       // Only run the sampling code IF we're not in Receive mode or realtime mode
-      if (!(audioSyncEnabled & 0x02) && !disableSoundProcessing) {
+      if (!disableSoundProcessing) {
         if (soundAgc > AGC_NUM_PRESETS) soundAgc = 0; // make sure that AGC preset is valid (to avoid array bounds violation)
 
         unsigned long t_now = millis();      // remember current time
@@ -1976,13 +1972,16 @@ class AudioReactive : public Usermod {
       connectUDPSoundSync();  // ensure we have a connection - if needed
 
       // UDP Microphone Sync  - receive mode
-      if ((audioSyncEnabled & 0x02) && udpSyncConnected) {
+      if ((audioSyncEnabled == 2) && udpSyncConnected) {
           // Only run the audio listener code if we're in Receive mode
           static float syncVolumeSmth = 0;
           bool have_new_sample = false;
           if (millis() - lastTime > delayMs) {
             have_new_sample = receiveAudioData();
-            if (have_new_sample) last_UDPTime = millis();
+            if (have_new_sample) {
+              syncAverage.addValue(millis() - last_UDPTime);
+              last_UDPTime = millis();
+            }
             lastTime = millis();
           } else {
 #ifdef ARDUINO_ARCH_ESP32
@@ -1996,7 +1995,7 @@ class AudioReactive : public Usermod {
           receivedFormat = 0;
       }
 
-      if (   (audioSyncEnabled & 0x02) // receive mode
+      if (   (audioSyncEnabled == 2) // receive mode
           && udpSyncConnected          // connected
           && (receivedFormat > 0)      // we actually received something in the past
           && ((millis() - last_UDPTime) > 25000)) {   // close connection after 25sec idle
@@ -2041,8 +2040,8 @@ class AudioReactive : public Usermod {
 #endif
 
 #ifdef ARDUINO_ARCH_ESP32
-      //UDP Microphone Sync  - transmit mode
-      if ((audioSyncEnabled & 0x01) && (millis() - lastTime > 20)) {
+      // Audio Sync  - transmit mode
+      if (((audioSyncEnabled == 1) || (audioSyncEnabled == 3)) && (millis() - lastTime > 20)) {
         // Only run the transmit code IF we're in Transmit mode
         transmitAudioData();
         lastTime = millis();
@@ -2173,7 +2172,7 @@ class AudioReactive : public Usermod {
     void addToJsonInfo(JsonObject& root)
     {
 #ifdef ARDUINO_ARCH_ESP32
-      char myStringBuffer[16]; // buffer for snprintf() - not used yet on 8266
+      char myStringBuffer[21]; // buffer for snprintf() - not used yet on 8266
 #endif
       JsonObject user = root["u"];
       if (user.isNull()) user = root.createNestedObject("u");
@@ -2219,9 +2218,9 @@ class AudioReactive : public Usermod {
         // The following can be used for troubleshooting user errors and is so not enclosed in #ifdef WLED_DEBUG
         // current Audio input
         infoArr = user.createNestedArray(F("Audio Source"));
-        if (audioSyncEnabled & 0x02) {
+        if (audioSyncEnabled == 2) {
           // UDP sound sync - receive mode
-          infoArr.add(F("UDP sound sync"));
+          infoArr.add(F("UDP sync"));
           if (udpSyncConnected) {
             if (millis() - last_UDPTime < 2500)
               infoArr.add(F(" - receiving"));
@@ -2230,11 +2229,30 @@ class AudioReactive : public Usermod {
           } else {
             infoArr.add(F(" - no connection"));
           }
+          DEBUG_PRINTF("std=%.3f avg=%.3f, min=%.3f, max=%.3f\n", syncAverage.getStandardDeviation(), syncAverage.getAverage(), syncAverage.getMinInBuffer(), syncAverage.getMaxInBuffer());
+          snprintf_P(myStringBuffer, 20, PSTR("s:%.2f a:%.2f"), syncAverage.getStandardDeviation(), syncAverage.getAverage());
+          infoArr = user.createNestedArray(F("Audio Sync"));
+          infoArr.add(myStringBuffer);
 #ifndef ARDUINO_ARCH_ESP32  // substitute for 8266
         } else {
           infoArr.add(F("sound sync Off"));
         }
 #else  // ESP32 only
+        } else if (audioSyncEnabled == 4) {
+          infoArr = user.createNestedArray(F("Audio Source"));
+          infoArr.add(F("ESP-NOW sync"));
+          if (udpSyncConnected) {
+            if (millis() - last_UDPTime < 2500)
+              infoArr.add(F(" - receiving"));
+            else
+              infoArr.add(F(" - idle"));
+          } else {
+            infoArr.add(F(" - no connection"));
+          }
+          DEBUG_PRINTF("std=%.3f avg=%.3f, min=%.3f, max=%.3f\n", syncAverage.getStandardDeviation(), syncAverage.getAverage(), syncAverage.getMinInBuffer(), syncAverage.getMaxInBuffer());
+          snprintf_P(myStringBuffer, 20, PSTR("s:%.2f a:%.2f"), syncAverage.getStandardDeviation(), syncAverage.getAverage());
+          infoArr = user.createNestedArray(F("Audio Sync"));
+          infoArr.add(myStringBuffer);
         } else {
           // Analog or I2S digital input
           if (audioSource && (audioSource->isInitialized())) {
@@ -2284,13 +2302,17 @@ class AudioReactive : public Usermod {
         }
 #endif
         // UDP Sound Sync status
-        infoArr = user.createNestedArray(F("UDP Sound Sync"));
+        infoArr = user.createNestedArray(F("Sound Sync"));
         if (audioSyncEnabled) {
-          if (audioSyncEnabled & 0x01) {
-            infoArr.add(F("send mode"));
+          if (audioSyncEnabled == 1) {
+            infoArr.add(F("UDP send mode"));
             if ((udpSyncConnected) && (millis() - lastTime < 2500)) infoArr.add(F(" v2"));
-          } else if (audioSyncEnabled & 0x02) {
-              infoArr.add(F("receive mode"));
+          } else if (audioSyncEnabled == 2) {
+              infoArr.add(F("UDP receive mode"));
+          } else if (audioSyncEnabled == 3) {
+              infoArr.add(F("ESP-NOW send mode"));
+          } else if (audioSyncEnabled == 4) {
+              infoArr.add(F("ESP-NOW receive mode"));
           }
         } else
           infoArr.add("off");
@@ -2689,9 +2711,15 @@ class AudioReactive : public Usermod {
       oappend(SET_F("dd=addDropdown('AudioReactive','sync:mode');"));
       oappend(SET_F("addOption(dd,'Off',0);"));
 #ifdef ARDUINO_ARCH_ESP32
-      oappend(SET_F("addOption(dd,'Send',1);"));
+      oappend(SET_F("addOption(dd,'Send (UDP)',1);"));
+      #ifndef WLED_DISABLE_ESPNOW
+      oappend(SET_F("addOption(dd,'Send (ESP-NOW)',3);"));
+      #endif
 #endif
-      oappend(SET_F("addOption(dd,'Receive',2);"));
+      oappend(SET_F("addOption(dd,'Receive (UDP)',2);"));
+      #ifndef WLED_DISABLE_ESPNOW
+      oappend(SET_F("addOption(dd,'Receive (ESP-NOW)',4);"));
+      #endif
       oappend(SET_F("addInfo('AudioReactive:sync:mode',1,'<br> Sync audio data with other WLEDs');"));
 
       oappend(SET_F("addInfo('AudioReactive:digitalmic:type',1,'<i>requires reboot!</i>');"));  // 0 is field type, 1 is actual field
@@ -2758,8 +2786,81 @@ class AudioReactive : public Usermod {
     {
       return USERMOD_ID_AUDIOREACTIVE;
     }
-};
 
+    // new "V2" audiosync struct - 40 Bytes
+    struct audioSyncPacket {
+      char    header[6];      //  06 Bytes
+      float   sampleRaw;      //  04 Bytes  - either "sampleRaw" or "rawSampleAgc" depending on soundAgc setting
+      float   sampleSmth;     //  04 Bytes  - either "sampleAvg" or "sampleAgc" depending on soundAgc setting
+      uint8_t samplePeak;     //  01 Bytes  - 0 no peak; >=1 peak detected. In future, this will also provide peak Magnitude
+      uint8_t frameCounter;   //  01 Bytes  - track duplicate/out of order packets
+      uint8_t fftResult[16];  //  16 Bytes
+      float  FFT_Magnitude;   //  04 Bytes
+      float  FFT_MajorPeak;   //  04 Bytes
+    };
+
+    static void decodeAudioData(int packetSize, uint8_t *fftBuff) {
+      audioSyncPacket *receivedPacket = reinterpret_cast<audioSyncPacket*>(fftBuff);
+      handleAudioSyncPacket(receivedPacket);
+    }
+
+    static void handleAudioSyncPacket(AudioReactive::audioSyncPacket *receivedPacket) {
+      static uint8_t lastFrameCounter = 0;
+      if(receivedPacket->frameCounter <= lastFrameCounter && receivedPacket->frameCounter != 0) { // TODO: might need extra checks here
+        DEBUGSR_PRINTF("Skipping audio frame out of order or duplicated - %u vs %u\n", lastFrameCounter, receivedPacket->frameCounter);
+        return;
+      }
+      else {
+        lastFrameCounter = receivedPacket->frameCounter;
+        // DEBUGSR_PRINTF("header: %s frameCounter: %u\n", String(receivedPacket->header), lastFrameCounter);
+      }
+
+      // update samples for effects
+      volumeSmth   = fmaxf(receivedPacket->sampleSmth, 0.0f);
+      // volumeRaw    = fmaxf(receivedPacket->sampleRaw, 0.0f);
+#ifdef ARDUINO_ARCH_ESP32
+      // update internal samples
+      // sampleRaw    = volumeRaw;
+      sampleAvg    = volumeSmth;
+      // rawSampleAgc = volumeRaw;
+      sampleAgc    = volumeSmth;
+      multAgc      = 1.0f;
+#endif
+      // Only change samplePeak IF it's currently false.
+      // If it's true already, then the animation still needs to respond.
+      autoResetPeak();
+      if (!samplePeak) {
+            samplePeak = receivedPacket->samplePeak >0 ? true:false;
+            if (samplePeak) timeOfPeak = millis();
+            //userVar1 = samplePeak;
+      }
+      //These values are only computed by ESP32
+      for (int i = 0; i < NUM_GEQ_CHANNELS; i++) fftResult[i] = receivedPacket->fftResult[i];
+      float my_magnitude  = fmaxf(receivedPacket->FFT_Magnitude, 0.0f);
+      // FFT_Magnitude = my_magnitude;
+      FFT_MajorPeak = constrain(receivedPacket->FFT_MajorPeak, 1.0f, 11025.0f);  // restrict value to range expected by effects
+    }
+
+    static bool isValidUdpSyncVersion(const char *header) {
+      return strncmp_P(header, UDP_SYNC_HEADER, 6) == 0;
+    }
+};
+void OnDataRecvAudio(const uint8_t * mac, const uint8_t *incomingData, int len) {
+  if(audioSyncEnabled != 4) return;
+  bool validData = AudioReactive::isValidUdpSyncVersion((const char *)incomingData);
+  if(validData) {
+    AudioReactive::audioSyncPacket receivedPacket;
+    if(len >= sizeof(receivedPacket)) { // TODO: should be == ?
+      memcpy(&receivedPacket, incomingData, sizeof(receivedPacket));
+      AudioReactive::handleAudioSyncPacket(&receivedPacket);
+      syncAverage.addValue(millis() - last_UDPTime);
+      last_UDPTime = millis();
+    }
+  }
+  else {
+    DEBUGSR_PRINT("E");
+  }
+}
 // strings to reduce flash memory usage (used more than twice)
 const char AudioReactive::_name[]       PROGMEM = "AudioReactive";
 const char AudioReactive::_enabled[]    PROGMEM = "enabled";
