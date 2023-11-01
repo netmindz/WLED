@@ -2172,7 +2172,7 @@ class AudioReactive : public Usermod {
     void addToJsonInfo(JsonObject& root)
     {
 #ifdef ARDUINO_ARCH_ESP32
-      char myStringBuffer[16]; // buffer for snprintf() - not used yet on 8266
+      char myStringBuffer[21]; // buffer for snprintf() - not used yet on 8266
 #endif
       JsonObject user = root["u"];
       if (user.isNull()) user = root.createNestedObject("u");
@@ -2229,7 +2229,10 @@ class AudioReactive : public Usermod {
           } else {
             infoArr.add(F(" - no connection"));
           }
-          Serial.printf("avg=%.3f, min=%.3f, max=%.3f\n", syncAverage.getAverage(), syncAverage.getMinInBuffer(), syncAverage.getMaxInBuffer());
+          DEBUG_PRINTF("std=%.3f avg=%.3f, min=%.3f, max=%.3f\n", syncAverage.getStandardDeviation(), syncAverage.getAverage(), syncAverage.getMinInBuffer(), syncAverage.getMaxInBuffer());
+          snprintf_P(myStringBuffer, 20, PSTR("s:%.2f a:%.2f"), syncAverage.getStandardDeviation(), syncAverage.getAverage());
+          infoArr = user.createNestedArray(F("Audio Sync"));
+          infoArr.add(myStringBuffer);
 #ifndef ARDUINO_ARCH_ESP32  // substitute for 8266
         } else {
           infoArr.add(F("sound sync Off"));
@@ -2246,7 +2249,10 @@ class AudioReactive : public Usermod {
           } else {
             infoArr.add(F(" - no connection"));
           }
-          Serial.printf("avg=%.3f, min=%.3f, max=%.3f\n", syncAverage.getAverage(), syncAverage.getMinInBuffer(), syncAverage.getMaxInBuffer());
+          DEBUG_PRINTF("std=%.3f avg=%.3f, min=%.3f, max=%.3f\n", syncAverage.getStandardDeviation(), syncAverage.getAverage(), syncAverage.getMinInBuffer(), syncAverage.getMaxInBuffer());
+          snprintf_P(myStringBuffer, 20, PSTR("s:%.2f a:%.2f"), syncAverage.getStandardDeviation(), syncAverage.getAverage());
+          infoArr = user.createNestedArray(F("Audio Sync"));
+          infoArr.add(myStringBuffer);
         } else {
           // Analog or I2S digital input
           if (audioSource && (audioSource->isInitialized())) {
