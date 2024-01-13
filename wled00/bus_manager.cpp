@@ -509,23 +509,24 @@ BusSmartMatrix::BusSmartMatrix(BusConfig &bc) : Bus(bc.type, bc.start, bc.autoWh
 }
 
 void BusSmartMatrix::setPixelColor(uint16_t pix, uint32_t c) {
-  uint8_t r = R(c);
-  uint8_t g = G(c);
-  uint8_t b = B(c);
+  uint8_t r = map(R(c), 0, 255, 0, brightness);
+  uint8_t g = map(G(c), 0, 255, 0, brightness);
+  uint8_t b = map(B(c), 0, 255, 0, brightness);
   uint8_t x = pix % width;
   uint8_t y = floor(pix / width);
- // matrix->drawPixel(x, y, matrix->color565(r, g, b));
+  matrix->drawPixel(x, y, matrix->color565(r, g, b));
   
-  matrix->drawPixel(1, 31, matrix->color565(0, 255, 0 ));
+  // matrix->drawPixel(1, 31, matrix->color565(0, 255, 0 ));
 
-  matrix->drawPixel(31, 31, matrix->color565(255, 0, 0 ));
+  // matrix->drawPixel(31, 31, matrix->color565(255, 0, 0 ));
 
-  matrix->drawPixel(1, 31, matrix->color565(0, 0, 255 ));
+  // matrix->drawPixel(1, 31, matrix->color565(0, 0, 255 ));
 
 }
 
 void BusSmartMatrix::setBrightness(uint8_t b, bool immediate) {
  // this->matrix->setBrightness(b);
+  this->brightness = b;
 }
 #endif
 // ***************************************************************************

@@ -368,6 +368,7 @@ class BusSmartMatrix : public Bus {
     Adafruit_Protomatter *matrix = nullptr;
     int width = 32;
     int height = 32;
+    uint8_t brightness = 50;
     
 };
 #endif
