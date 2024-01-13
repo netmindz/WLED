@@ -1,10 +1,8 @@
 #ifndef BusManager_h
 #define BusManager_h
 
-#define WLED_ENABLE_SMARTMATRIX
-
 #ifdef WLED_ENABLE_SMARTMATRIX
-#include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
+#include <Adafruit_Protomatter.h>
 #endif
 /*
  * Class for addressing various light types
@@ -344,8 +342,7 @@ class BusSmartMatrix : public Bus {
 
     void show() {
       // Serial.println("SmartMatrix: show()");
-      display->flipDMABuffer(); // Show the back buffer, set currently output buffer to the back (i.e. no longer being sent to LED panels)
-      display->clearScreen();   // Now clear the back-buffer
+      matrix->show(); 
     }
 
     bool canShow() {
@@ -368,8 +365,9 @@ class BusSmartMatrix : public Bus {
     }
 
   private:
-    MatrixPanel_I2S_DMA *display = nullptr;
-    HUB75_I2S_CFG mxconfig;
+    Adafruit_Protomatter *matrix = nullptr;
+    int width = 32;
+    int height = 32;
     
 };
 #endif
