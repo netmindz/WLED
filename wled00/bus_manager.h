@@ -2,7 +2,11 @@
 #define BusManager_h
 
 #ifdef WLED_ENABLE_SMARTMATRIX
+#ifdef ARDUINO_ADAFRUIT_MATRIXPORTAL_ESP32S3
+#include <MatrixHardware_MatrixPortal_S3.h>
+#else
 #include <MatrixHardware_ESP32_V0.h>
+#endif
 #include <SmartMatrix.h>
 #endif
 /*
@@ -351,13 +355,9 @@ class BusSmartMatrix : public Bus {
       return !backgroundLayer->isSwapPending();
     }
     
-    // void setBrightness(uint8_t b, bool immediate);
+    void setBrightness(uint8_t b, bool immediate);
 
     // uint8_t getPins(uint8_t* pinArray) {} // todo
-
-    uint16_t getLength() {
-      return _len;
-    }
 
     void cleanup() {}
 

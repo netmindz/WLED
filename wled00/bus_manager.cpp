@@ -488,8 +488,6 @@ BusSmartMatrix::BusSmartMatrix(BusConfig &bc) : Bus(bc.type, bc.start, bc.autoWh
   smartMatrix.addLayer(&backgroundLayer); 
   smartMatrix.begin();
 
-  smartMatrix.setBrightness(50); // TODO - hard code for now
-
   this->buffer = backgroundLayer.backBuffer();
 
   backgroundLayer.swapBuffers(true);
@@ -505,9 +503,9 @@ void BusSmartMatrix::setPixelColor(uint16_t pix, uint32_t c) {
   this->buffer[pix] = rgb24(r, g, b);
 }
 
-// void BusSmartMatrix::setBrightness(uint8_t b, bool immediate) {
-//   this->smartMatrix->setBrightness(b);
-// }
+void BusSmartMatrix::setBrightness(uint8_t b, bool immediate) {
+  this->smartMatrix->setBrightness(b);
+}
 #endif
 // ***************************************************************************
 
