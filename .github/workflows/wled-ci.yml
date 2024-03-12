@@ -63,7 +63,7 @@ jobs:
       run: pio run -e ${{ matrix.environment }}
     - uses: actions/upload-artifact@v2
       with:
-        name: firmware-${{ matrix.environment }}
+        name: firmware-${{ matrix.environment }}-${{env.git_hash}}.bin
         path: |
           build_output/firmware/*.bin
     - uses: actions/upload-artifact@v2
