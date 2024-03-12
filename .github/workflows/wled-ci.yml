@@ -64,13 +64,12 @@ jobs:
     - uses: actions/upload-artifact@v2
       with:
         name: firmware-${{ matrix.environment }}-${{env.git_hash}}.bin
-        path: |
-          build_output/firmware/*.bin
+        path: .pio/build/*/firmware.bin
     - uses: actions/upload-artifact@v2
       if: startsWith(github.ref, 'refs/tags/')
       with:
-        name: firmware-release
-        path: build_output/release/*.bin
+        name: firmware-release-${{ matrix.environment }}-${{env.git_hash}}.bin
+        path: .pio/build/*/firmware.bin
   release:
     name: Create Release
     runs-on: ubuntu-latest
