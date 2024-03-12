@@ -57,7 +57,7 @@ class AutoPlaylistUsermod : public Usermod {
           String name = "";
           getPresetName(ambientPlaylist, name);
           USER_PRINTF("AutoPlaylist: Silence - apply %s\n", name.c_str());
-          applyPreset(ambientPlaylist, CALL_MODE_NOTIFICATION);
+          if(bri > 0) applyPreset(ambientPlaylist, CALL_MODE_NOTIFICATION);
         }
       }
       else {
@@ -66,7 +66,7 @@ class AutoPlaylistUsermod : public Usermod {
           String name = "";
           getPresetName(musicPlaylist, name);
           USER_PRINTF("AutoPlaylist: End of silence - apply %s\n", name.c_str());
-          applyPreset(musicPlaylist, CALL_MODE_NOTIFICATION);
+          if(bri > 0) applyPreset(musicPlaylist, CALL_MODE_NOTIFICATION);
         }
       }
     }
