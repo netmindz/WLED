@@ -11,7 +11,9 @@ class AutoPlaylistUsermod : public Usermod {
     byte ambientPlaylist = 1;
     byte musicPlaylist = 2;
     int timeout = 60;
-
+    bool autoChange = false;
+    byte lastAutoPreset = 0;
+  
     static const char _enabled[];
     static const char _ambientPlaylist[];
     static const char _musicPlaylist[];
@@ -38,6 +40,10 @@ class AutoPlaylistUsermod : public Usermod {
       
       if(!enabled) return;
 
+      if(bri == 0) return;
+
+      if(lastAutoPreset > 0 && lastAutoPreset != currentPreset) enabled = false;
+
       um_data_t *um_data;
       if (!usermods.getUMData(&um_data, USERMOD_ID_AUDIOREACTIVE)) {
         // No Audio Reactive
@@ -57,7 +63,8 @@ class AutoPlaylistUsermod : public Usermod {
           String name = "";
           getPresetName(ambientPlaylist, name);
           USER_PRINTF("AutoPlaylist: Silence - apply %s\n", name.c_str());
-          if(bri > 0) applyPreset(ambientPlaylist, CALL_MODE_NOTIFICATION);
+          applyPreset(ambientPlaylist, CALL_MODE_NOTIFICATION);
+          lastAutoPreset = ambientPlaylist;
         }
       }
       else {
@@ -66,7 +73,8 @@ class AutoPlaylistUsermod : public Usermod {
           String name = "";
           getPresetName(musicPlaylist, name);
           USER_PRINTF("AutoPlaylist: End of silence - apply %s\n", name.c_str());
-          if(bri > 0) applyPreset(musicPlaylist, CALL_MODE_NOTIFICATION);
+          applyPreset(musicPlaylist, CALL_MODE_NOTIFICATION);
+          lastAutoPreset = ambientPlaylist;
         }
       }
     }
