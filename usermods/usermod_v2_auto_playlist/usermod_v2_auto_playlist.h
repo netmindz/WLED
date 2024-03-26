@@ -199,10 +199,10 @@ class AutoPlaylistUsermod : public Usermod {
 
       infoArr = user.createNestedArray(F(""));
       if(!enabled) {
-        infoArr.add("disabled");  
+        infoArr.add("");  
       }
       else {
-        infoArr.add(lastSoundTime);
+        infoArr.add("Active");
       }
     }
 
