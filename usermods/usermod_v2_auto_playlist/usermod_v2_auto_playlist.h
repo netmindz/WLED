@@ -1,39 +1,61 @@
 #pragma once
 
+#ifdef WLED_DEBUG
+  #ifndef USERMOD_AUTO_PLAYLIST_DEBUG
+    #define USERMOD_AUTO_PLAYLIST_DEBUG
+  #endif
+#endif
+
 #include "wled.h"
 
 class AutoPlaylistUsermod : public Usermod {
 
   private:
+    
+    // experimental parameters by softhack007 - more balanced but need testing
+    const uint_fast32_t MAX_DISTANCE_TRACKER = 184; // maximum accepted distance_tracker
+    const uint_fast32_t ENERGY_SCALE = 1500;
+    const float FILTER_SLOW1 = 0.0075f;  // for "slow" energy     - was 0.01f
+    const float FILTER_SLOW2 = 0.005f;   // for "slow" lfc / zcr  - was 0.01f
+    const float FILTER_FAST1 = 0.2f;     // for "fast" energy     - was 0.10f
+    const float FILTER_FAST2 = 0.25f;    // for "fast" lfc / zcr  - was 0.10f
+    const float FILTER_VOLUME = 0.03f;   // for volumeSmth averaging - takes 8-10sec until "silence"
 
+    bool initDone = false;
+    bool functionality_enabled = false;
     bool silenceDetected = true;
-    uint32_t lastSoundTime = 0;
     byte ambientPlaylist = 1;
     byte musicPlaylist = 2;
     int timeout = 60;
     bool autoChange = false;
     byte lastAutoPlaylist = 0;
-    int change_timer = millis();
+    unsigned long lastSoundTime = millis()-(timeout*1000)-100;
+    unsigned long change_timer = millis();
+    unsigned long autochange_timer = millis();
+    float avg_volumeSmth = 0;
+
+    // fftesult de-scaling factors: 2.8f / fftResultPink[]
+    const float fftDeScaler[NUM_GEQ_CHANNELS] = {2.8/2.35, 2.8/1.32, 2.8/1.32, 2.8/1.40, 2.8/1.48, 2.8/1.57, 2.8/1.68, 2.8/1.80, 2.8/1.89, 2.8/1.95, 2.8/2.14, 2.8/2.26, 2.8/2.50, 2.8/2.90, 2.8/4.20, 2.8/6.50}; 
 
     uint_fast32_t energy = 0;
 
-    uint_fast32_t avg_long_energy = 250;
-    uint_fast32_t avg_long_lfc = 1000;
-    uint_fast32_t avg_long_zcr = 500;
+    float avg_long_energy = 250;
+    float avg_long_lfc = 1000;
+    float avg_long_zcr = 500;
 
-    uint_fast32_t avg_short_energy = 250;
-    uint_fast32_t avg_short_lfc = 1000;
-    uint_fast32_t avg_short_zcr = 500;
+    float avg_short_energy = 250;
+    float avg_short_lfc = 1000;
+    float avg_short_zcr = 500;
 
+    bool resetFilters = true;  // to (re)initialize filters on first run
     uint_fast32_t vector_energy = 0;
     uint_fast32_t vector_lfc = 0;
     uint_fast32_t vector_zcr = 0;
 
     uint_fast32_t distance = 0;
     uint_fast32_t distance_tracker = UINT_FAST32_MAX;
-    // uint_fast64_t squared_distance = 0;
 
-    int lastchange = millis();
+    unsigned long lastchange = millis();
 
     int_fast16_t change_threshold = 50; // arbitrary starting point.
     uint_fast16_t change_threshold_change = 0;
@@ -44,7 +66,8 @@ class AutoPlaylistUsermod : public Usermod {
 
     std::vector<int> autoChangeIds;
   
-    static const char _enabled[];
+    static const char _name[];
+    static const char _autoPlaylistEnabled[];
     static const char _ambientPlaylist[];
     static const char _musicPlaylist[];
     static const char _timeout[];
@@ -63,6 +86,7 @@ class AutoPlaylistUsermod : public Usermod {
     // network here
     void setup() {
       USER_PRINTLN("AutoPlaylistUsermod");
+      initDone = true;
     }
 
     // gets called every time WiFi is (re-)connected. Initialize own network
@@ -75,28 +99,46 @@ class AutoPlaylistUsermod : public Usermod {
 
       uint8_t *fftResult = (uint8_t*)um_data->u_data[2];
 
+      energy = 0;
+
       for (int i=0; i < NUM_GEQ_CHANNELS; i++) {
-        energy += fftResult[i];
+
+        // make an attempt to undo some "trying to look better" FFT manglings in AudioReactive postProcessFFTResults()
+
+        float amplitude = float(fftResult[i]) * fftDeScaler[i];   // undo "pink noise" scaling
+        amplitude /= 0.85f + (float(i)/4.5f);                     // undo extra up-scaling for high frequencies
+        energy += roundf(amplitude * amplitude);                  // calc energy from amplitude
+
       }
       
-      energy *= energy;
-      energy /= 10000; // scale down so we get 0 sometimes
+      energy /= ENERGY_SCALE; // scale down so we get 0 sometimes
 
-      uint8_t lfc = fftResult[0];
-      uint_fast16_t zcr = *(uint_fast16_t*)um_data->u_data[11];
+      uint16_t lfc = float(fftResult[0]) * fftDeScaler[0] / 0.85f; // might as well undo pink noise here too.
+      uint16_t zcr = *(uint16_t*)um_data->u_data[11];
 
       // WLED-MM/TroyHacks: Calculate the long- and short-running averages
       // and the individual vector distances.
 
-      if (volumeSmth > 1) { 
+      if (volumeSmth > 1.0f) { 
 
-        avg_long_energy = avg_long_energy * 0.99 + energy * 0.01;
-        avg_long_lfc    = avg_long_lfc    * 0.99 + lfc    * 0.01;
-        avg_long_zcr    = avg_long_zcr    * 0.99 + zcr    * 0.01;
+        // initialize filters on first run
+        if (resetFilters) {
+          avg_short_energy = avg_long_energy = energy;
+          avg_short_lfc = avg_long_lfc = lfc;
+          avg_short_zcr = avg_long_zcr = zcr;
+          resetFilters = false;
+          #ifdef USERMOD_AUTO_PLAYLIST_DEBUG
+          USER_PRINTLN("AutoPlaylist: Filters reset.");
+          #endif
+        }
 
-        avg_short_energy = avg_short_energy * 0.9 + energy * 0.1;
-        avg_short_lfc    = avg_short_lfc    * 0.9 + lfc    * 0.1;
-        avg_short_zcr    = avg_short_zcr    * 0.9 + zcr    * 0.1;
+        avg_long_energy = avg_long_energy + FILTER_SLOW1 * (float(energy) - avg_long_energy);
+        avg_long_lfc    = avg_long_lfc    + FILTER_SLOW2 * (float(lfc)    - avg_long_lfc);
+        avg_long_zcr    = avg_long_zcr    + FILTER_SLOW2 * (float(zcr)    - avg_long_zcr);
+
+        avg_short_energy = avg_short_energy + FILTER_FAST1 * (float(energy) - avg_short_energy);
+        avg_short_lfc    = avg_short_lfc    + FILTER_FAST2 * (float(lfc)    - avg_short_lfc);
+        avg_short_zcr    = avg_short_zcr    + FILTER_FAST2 * (float(zcr)    - avg_short_zcr);
 
         // allegedly this is faster than pow(whatever,2)
         vector_lfc = (avg_short_lfc-avg_long_lfc)*(avg_short_lfc-avg_long_lfc);
@@ -105,32 +147,41 @@ class AutoPlaylistUsermod : public Usermod {
 
       }
 
-      // distance is linear, squared_distance is magnitude.
-      // linear is easier to fine-tune, IMHO.
       distance = vector_lfc + vector_energy + vector_zcr;
-      // squared_distance = distance * distance;
 
-      int change_interval = millis()-lastchange;
+      long change_interval = millis()-lastchange;
 
-      if (distance < distance_tracker && change_interval > change_lockout && volumeSmth > 1) {
+      if (distance < distance_tracker && change_interval > change_lockout && volumeSmth > 1.0f) {
         distance_tracker = distance;
       }
 
-      // USER_PRINTF("Distance: %3lu - v_lfc: %5lu v_energy: %5lu v_zcr: %5lu\n",(unsigned long)distance,(unsigned long)vector_lfc,(unsigned long)vector_energy,(unsigned long)vector_zcr);
+      // Debug for adjusting formulas, etc:
+      // USER_PRINTF("Distance: %5lu - v_lfc: %5lu v_energy: %5lu v_zcr: %5lu\n",(unsigned long)distance,(unsigned long)vector_lfc,(unsigned long)vector_energy,(unsigned long)vector_zcr);
 
-      if (millis() > change_timer + ideal_change_min) {
+      if ((millis() - change_timer) > ideal_change_min) { // softhack007 same result as "millis() > change_timer + ideal_change_min", but more robust against unsigned overflow
 
         // Make the analysis less sensitive if we miss the window.
         // Sometimes the analysis lowers the change_threshold too much for
         // the current music, especially after track changes or during 
-        // sparce intros and breakdowns.
+        // sparse intros and breakdowns.
 
-        if (change_interval > ideal_change_min && distance_tracker < 1000) {
-
-          change_threshold_change = (distance_tracker)-change_threshold;
+        if (change_interval > ideal_change_min && distance_tracker <= MAX_DISTANCE_TRACKER) {
+          
+          if (distance_tracker >= change_threshold) {
+            change_threshold_change = distance_tracker-change_threshold;
+          } else {
+            change_threshold_change = change_threshold-distance_tracker;
+          }
+          
           change_threshold = distance_tracker;
 
-          USER_PRINTF("--- lowest distance =%4lu - no changes done in %6ums - next change_threshold is %3u (%3u diff aprox)\n", (unsigned long)distance_tracker,change_interval,change_threshold,change_threshold_change);
+          if (change_threshold_change > 9999) change_threshold_change = 0; // cosmetic for debug
+
+          if (functionality_enabled)  {
+            #ifdef USERMOD_AUTO_PLAYLIST_DEBUG
+            USER_PRINTF("--- lowest distance = %4lu - no changes done in %6ldms - next change_threshold is %4u (%4u diff approx)\n", (unsigned long)distance_tracker,change_interval,change_threshold,change_threshold_change);
+            #endif
+          }
 
           distance_tracker = UINT_FAST32_MAX;
 
@@ -139,12 +190,10 @@ class AutoPlaylistUsermod : public Usermod {
         change_timer = millis();
 
       }
-      
-      if (distance <= change_threshold && change_interval > change_lockout && volumeSmth > 1) { 
 
-        change_threshold_change = change_threshold-(distance*0.9);
+      if (distance <= change_threshold && change_interval > change_lockout && volumeSmth > 1.0f) { 
 
-        if (change_threshold_change < 1) change_threshold_change = 1;
+        change_threshold_change = max(1.0f, roundf(change_threshold-(distance*0.9f)));  // exclude negatives, ensure change_threshold_change is always >= 1
 
         if (change_interval > ideal_change_max) {
           change_threshold += change_threshold_change;    // make changes more sensitive
@@ -154,52 +203,66 @@ class AutoPlaylistUsermod : public Usermod {
           change_threshold_change = 0;                    // change was within our window, no sensitivity change
         }
 
-        if (change_threshold < 1) change_threshold = 0;   // we need change_threshold to be signed becasue otherwise this wraps to UINT_FAST16_MAX
+        if (change_threshold < 1) change_threshold = 0;   // we need change_threshold to be signed because otherwise this wraps to UINT_FAST16_MAX
 
         distance_tracker = UINT_FAST32_MAX;
 
-        if (autoChangeIds.size() == 0) {
+        if (functionality_enabled) {
+            
+          if (autoChangeIds.size() == 0) {
+            if(currentPlaylist < 1) return;
 
-          USER_PRINTF("Loading presets from playlist: %3u\n", currentPlaylist);
+            #ifdef USERMOD_AUTO_PLAYLIST_DEBUG
+            USER_PRINTF("Loading presets from playlist: %3d\n", currentPlaylist);
+            #endif
 
-          JsonObject playtlistOjb = doc.to<JsonObject>();
-          serializePlaylist(playtlistOjb);
-          JsonArray playlistArray = playtlistOjb["playlist"]["ps"];
+            JsonObject playtlistOjb = doc.to<JsonObject>();
+            serializePlaylist(playtlistOjb);
+            JsonArray playlistArray = playtlistOjb["playlist"]["ps"];
 
-          for(JsonVariant v : playlistArray) {
-            USER_PRINTF("Adding %3u to autoChangeIds\n", v.as<int>());
-            autoChangeIds.push_back(v.as<int>());
+            for(JsonVariant v : playlistArray) {
+              #ifdef USERMOD_AUTO_PLAYLIST_DEBUG
+              USER_PRINTF("Adding %3u to autoChangeIds\n", v.as<int>());
+              #endif
+              autoChangeIds.push_back(v.as<int>());
+            }
+
           }
 
-        }
+          uint8_t newpreset = 0;
 
-        uint8_t newpreset = 0;
+          do {
+            newpreset = autoChangeIds.at(random(0, autoChangeIds.size())); // random() is *exclusive* of the last value, so it's OK to use the full size.
+          } while ((currentPreset == newpreset) && (autoChangeIds.size() > 1)); // make sure we get a different random preset. Unless there is only one.
 
-        do {
-          newpreset = autoChangeIds.at(random(0, autoChangeIds.size())); // random() is *exclusive* of the last value, so it's OK to use the full size.
-        }
-        while (currentPreset == newpreset); // make sure we get a different random preset.
+          if (change_interval > change_lockout+3) {
 
-        if (change_interval > change_lockout+3) {
+            // Make sure we have a statistically significant change and we aren't
+            // just bouncing off change_lockout. That's valid for changing the
+            // thresholds, but might be a bit crazy for lighting changes. 
+            // When the music changes quite a bit, the distance calculation can
+            // go into freefall - this logic stops that from triggering right
+            // after change_lockout. Better for smaller change_lockout values.
 
-          // Make sure we have a statistically significant change and we aren't
-          // just bouncing off change_lockout. That's valid for changing the
-          // thresholds, but might be a bit crazy for lighting changes. 
-          // When the music changes quite a bit, the distance calculation can
-          // go into freefall - this logic stops that from triggering right
-          // after change_lockout. Better for smaller change_lockout values.
+            suspendPlaylist();       // suspend the playlist engine before changing to another preset
+            applyPreset(newpreset);
+            
+            #ifdef USERMOD_AUTO_PLAYLIST_DEBUG
+            USER_PRINTF("*** CHANGE distance = %4lu - change_interval was %5ldms - next change_threshold is %4u (%4u diff aprox)\n",(unsigned long)distance,change_interval,change_threshold,change_threshold_change);
+            #endif
 
-          applyPreset(newpreset);
+          } else {
 
-          USER_PRINTF("*** CHANGE distance =%4lu - change_interval was %5ums - next change_threshold is %3u (%3u diff aprox)\n",(unsigned long)distance,change_interval,change_threshold,change_threshold_change);
+            #ifdef USERMOD_AUTO_PLAYLIST_DEBUG
+            USER_PRINTF("^^^ SKIP!! distance = %4lu - change_interval was %5ldms - next change_threshold is %4u (%4u diff aprox)\n",(unsigned long)distance,change_interval,change_threshold,change_threshold_change);
+            #endif
 
-        } else {
-
-          USER_PRINTF("*** SKIP!! distance =%4lu - change_interval was %5ums - next change_threshold is %3u (%3u diff aprox)\n",(unsigned long)distance,change_interval,change_threshold,change_threshold_change);
+          }
 
         }
         
         lastchange = millis();  
+        change_timer = millis();
 
       }
 
@@ -210,25 +273,31 @@ class AutoPlaylistUsermod : public Usermod {
      */
     void loop() {
       
+      if (!enabled) return;
+
       if (millis() < 10000) return; // Wait for device to settle
 
       if (lastAutoPlaylist > 0 && currentPlaylist != lastAutoPlaylist && currentPreset != 0) {
-        if (currentPlaylist == musicPlaylist) {
-          USER_PRINTF("AutoPlaylist: enabled due to manual change of playlist back to %u\n", currentPlaylist);
-          enabled = true;
-          lastAutoPlaylist = currentPlaylist;
-        } else if (enabled) {
+        if (functionality_enabled) {
+          #ifdef USERMOD_AUTO_PLAYLIST_DEBUG
           USER_PRINTF("AutoPlaylist: disable due to manual change of playlist from %u to %d, preset:%u\n", lastAutoPlaylist, currentPlaylist, currentPreset);
-          enabled = false;
+          #endif
+          functionality_enabled = false;
+        } else if (currentPlaylist == musicPlaylist) {
+          #ifdef USERMOD_AUTO_PLAYLIST_DEBUG
+          USER_PRINTF("AutoPlaylist: enabled due to manual change of playlist back to %u\n", currentPlaylist);
+          #endif
+          functionality_enabled = true;
+          lastAutoPlaylist = currentPlaylist;
         }
       }
 
-      if (!enabled && currentPlaylist == musicPlaylist) {
-          USER_PRINTF("AutoPlaylist: enabled due selecting musicPlaylist(%u)", musicPlaylist);
-          enabled = true;
+      if (!functionality_enabled && currentPlaylist == musicPlaylist) {
+          #ifdef USERMOD_AUTO_PLAYLIST_DEBUG
+          USER_PRINTF("AutoPlaylist: enabled due selecting musicPlaylist(%u)\n", musicPlaylist);
+          #endif
+          functionality_enabled = true;
       }
-
-      if (!enabled) return;
 
       if (bri == 0) return;
 
@@ -242,70 +311,89 @@ class AutoPlaylistUsermod : public Usermod {
 
       float volumeSmth = *(float*)um_data->u_data[0];
 
-      if (volumeSmth > 0.5) {
+      avg_volumeSmth = avg_volumeSmth +  FILTER_VOLUME * (volumeSmth - avg_volumeSmth);
+
+      if (avg_volumeSmth >= 1.0f) {
         lastSoundTime = millis();
       }
 
-      if (millis() - lastSoundTime > (timeout * 1000)) {
+      if (millis() - lastSoundTime > (long(timeout) * 1000)) {
         if (!silenceDetected) {
           silenceDetected = true;
-          USER_PRINTF("AutoPlaylist: Silence ");
+          USER_PRINTLN("AutoPlaylist: Silence detected");
           changePlaylist(ambientPlaylist);
         }
       } else {
         if (silenceDetected) {
           silenceDetected = false;
-          USER_PRINTF("AutoPlaylist: End of silence ");
+          USER_PRINTLN("AutoPlaylist: Sound detected");
           changePlaylist(musicPlaylist);
         }
-        if (autoChange) change(um_data);
+        if (autoChange && millis() >= autochange_timer+22) {
+          change(um_data);
+          autochange_timer = millis();
+        }
       }
-    }
-
-    /*
-     * addToJsonInfo() can be used to add custom entries to the /json/info part of the JSON API.
-     * Creating an "u" object allows you to add custom key/value pairs to the Info section of the WLED web UI.
-     * Below it is shown how this could be used for e.g. a light sensor
-     */
-    void addToJsonInfo(JsonObject& root) {
-
-      JsonObject user = root["u"];
-
-      if (user.isNull()) {
-        user = root.createNestedObject("u");
-      }
-
-      JsonArray infoArr = user.createNestedArray(FPSTR(_name));  // name
-
-      infoArr = user.createNestedArray(F(""));
-      if(!enabled) {
-        infoArr.add("");  
-      }
-      else {
-        infoArr.add("Active");
-      }
-
     }
 
     /*
      * addToJsonState() can be used to add custom entries to the /json/state part of the JSON API (state object).
      * Values in the state object may be modified by connected clients
      */
-    //void addToJsonState(JsonObject& root) {
-    //}
+    void addToJsonInfo(JsonObject& root) {
+      JsonObject user = root["u"];
+      if (user.isNull()) {
+        user = root.createNestedObject("u");
+      }
+
+      if (!enabled) return; // usermod disabled -> don't add to info page
+
+      String uiNameString = FPSTR(_name);
+      if (enabled && functionality_enabled) {
+        uiNameString += F(" Running");
+      } else if (!enabled) {
+        uiNameString += F(" Disabled");
+      } else {
+        uiNameString += F(" Suspended");
+      }
+      JsonArray infoArr = user.createNestedArray(uiNameString);  // name + status
+
+      String uiDomString = (currentPlaylist > 0) ? String("#") + String(currentPlaylist) + String(" ") : String("");
+
+      if (currentPlaylist == musicPlaylist && currentPlaylist > 0) {
+        uiDomString += F("Music Playlist");
+      } else if (currentPlaylist == ambientPlaylist && currentPlaylist > 0) {
+        uiDomString += F("Ambient Playlist");
+      } else {
+        uiDomString += F("Playlist Overridden");
+      }
+
+      uiDomString += F("<br />");
+
+      if (enabled && autoChange && currentPlaylist == musicPlaylist && functionality_enabled) {
+        uiDomString += F("AutoChange is Active");
+      } else if (autoChange && (currentPlaylist != musicPlaylist || !functionality_enabled || !enabled)) {
+        uiDomString += F("AutoChange on Stand-by");
+      } else if (!autoChange) {
+        uiDomString += F("AutoChange is Disabled");
+      }
+      
+      // #ifdef USERMOD_AUTO_PLAYLIST_DEBUG
+      // uiDomString += F("<br />");
+      // uiDomString += F("Change Threshold: ");
+      // uiDomString += String(change_threshold);
+      // #endif
+
+      infoArr.add(uiDomString);
+
+    }
 
     /*
      * readFromJsonState() can be used to receive data clients send to the /json/state part of the JSON API (state object).
      * Values in the state object may be modified by connected clients
      */
     void readFromJsonState(JsonObject& root) {
-      if (!initDone) return;  // prevent crash on boot applyPreset()
-      JsonObject um = root[FPSTR(_name)];
-      if (!um.isNull()) {
-        if (um[FPSTR(_enabled)].is<bool>()) {
-          enabled = um[FPSTR(_enabled)].as<bool>();
-        }
-      }
+      return;
     }
 
     void appendConfigData() {
@@ -330,18 +418,20 @@ class AutoPlaylistUsermod : public Usermod {
 
       JsonObject top = root.createNestedObject(FPSTR(_name)); // usermodname
 
-      top[FPSTR(_enabled)]            = enabled;
-      top[FPSTR(_timeout)]            = timeout;
-      top[FPSTR(_ambientPlaylist)]    = ambientPlaylist;  // usermodparam
-      top[FPSTR(_musicPlaylist)]      = musicPlaylist;    // usermodparam
-      top[FPSTR(_autoChange)]         = autoChange;
-      top[FPSTR(_change_lockout)]     = change_lockout;
-      top[FPSTR(_ideal_change_min)]   = ideal_change_min;
-      top[FPSTR(_ideal_change_max)]   = ideal_change_max;
+      top[FPSTR(_autoPlaylistEnabled)] = enabled;
+      top[FPSTR(_timeout)]             = timeout;
+      top[FPSTR(_ambientPlaylist)]     = ambientPlaylist;  // usermodparam
+      top[FPSTR(_musicPlaylist)]       = musicPlaylist;    // usermodparam
+      top[FPSTR(_autoChange)]          = autoChange;
+      top[FPSTR(_change_lockout)]      = change_lockout;
+      top[FPSTR(_ideal_change_min)]    = ideal_change_min;
+      top[FPSTR(_ideal_change_max)]    = ideal_change_max;
 
       lastAutoPlaylist = 0;
 
-      DEBUG_PRINTLN(F("AutoPlaylist config saved."));
+      #ifdef USERMOD_AUTO_PLAYLIST_DEBUG
+      USER_PRINTLN(F("AutoPlaylist config saved."));
+      #endif
 
     }
 
@@ -360,22 +450,24 @@ class AutoPlaylistUsermod : public Usermod {
       JsonObject top = root[FPSTR(_name)];
 
       if (top.isNull()) {
-        DEBUG_PRINT(FPSTR(_name));
-        DEBUG_PRINTLN(F(": No config found. (Using defaults.)"));
+        USER_PRINT(FPSTR(_name));
+        USER_PRINTLN(F(": No config found. (Using defaults.)"));
         return false;
       }
 
-      DEBUG_PRINT(FPSTR(_name));
-      getJsonValue(top[_enabled], enabled);
-      getJsonValue(top[_timeout], timeout);
-      getJsonValue(top[_ambientPlaylist], ambientPlaylist);
-      getJsonValue(top[_musicPlaylist], musicPlaylist);
-      getJsonValue(top[_autoChange], autoChange);
-      getJsonValue(top[_change_lockout], change_lockout);
-      getJsonValue(top[_ideal_change_min], ideal_change_min);
-      getJsonValue(top[_ideal_change_max], ideal_change_max);
+      enabled          = top[FPSTR(_autoPlaylistEnabled)] | enabled;
+      timeout          = top[FPSTR(_timeout)]             | timeout;
+      ambientPlaylist  = top[FPSTR(_ambientPlaylist)]     | ambientPlaylist;
+      musicPlaylist    = top[FPSTR(_musicPlaylist)]       | musicPlaylist;
+      autoChange       = top[FPSTR(_autoChange)]          | autoChange;
+      change_lockout   = top[FPSTR(_change_lockout)]      | change_lockout;
+      ideal_change_min = top[FPSTR(_ideal_change_min)]    | ideal_change_min;
+      ideal_change_max = top[FPSTR(_ideal_change_max)]    | ideal_change_max;
 
-      DEBUG_PRINTLN(F(" config (re)loaded."));
+      #ifdef USERMOD_AUTO_PLAYLIST_DEBUG
+      USER_PRINT(FPSTR(_name));
+      USER_PRINTLN(F(" config (re)loaded."));
+      #endif
 
       // use "return !top["newestParameter"].isNull();" when updating Usermod with new features
       return true;
@@ -395,18 +487,24 @@ class AutoPlaylistUsermod : public Usermod {
     void changePlaylist(byte id) {
         String name = "";
         getPresetName(id, name);
-        USER_PRINTF("apply %s\n", name.c_str());
-        applyPreset(id, CALL_MODE_NOTIFICATION);
+        #ifdef USERMOD_AUTO_PLAYLIST_DEBUG
+        USER_PRINTF("AutoPlaylist: Applying \"%s\"\n", name.c_str());
+        #endif
+        // if (currentPlaylist != id) {  // un-comment to only change on "real" changes
+          unloadPlaylist(); // applying a preset requires to unload previous playlist
+          applyPreset(id, CALL_MODE_NOTIFICATION);
+        // }
         lastAutoPlaylist = id;
     }
 
 };
 
-const char AutoPlaylistUsermod::_enabled[]          PROGMEM = "enabled";
-const char AutoPlaylistUsermod::_ambientPlaylist[]  PROGMEM = "ambientPlaylist";
-const char AutoPlaylistUsermod::_musicPlaylist[]    PROGMEM = "musicPlaylist";
-const char AutoPlaylistUsermod::_timeout[]          PROGMEM = "timeout";
-const char AutoPlaylistUsermod::_autoChange[]       PROGMEM = "autoChange";
-const char AutoPlaylistUsermod::_change_lockout[]   PROGMEM = "change_lockout";
-const char AutoPlaylistUsermod::_ideal_change_min[] PROGMEM = "ideal_change_min";
-const char AutoPlaylistUsermod::_ideal_change_max[] PROGMEM = "ideal_change_max";
+const char AutoPlaylistUsermod::_name[]                PROGMEM = "AutoPlaylist";
+const char AutoPlaylistUsermod::_autoPlaylistEnabled[] PROGMEM = "enabled";
+const char AutoPlaylistUsermod::_ambientPlaylist[]     PROGMEM = "ambientPlaylist";
+const char AutoPlaylistUsermod::_musicPlaylist[]       PROGMEM = "musicPlaylist";
+const char AutoPlaylistUsermod::_timeout[]             PROGMEM = "timeout";
+const char AutoPlaylistUsermod::_autoChange[]          PROGMEM = "autoChange";
+const char AutoPlaylistUsermod::_change_lockout[]      PROGMEM = "change_lockout";
+const char AutoPlaylistUsermod::_ideal_change_min[]    PROGMEM = "ideal_change_min";
+const char AutoPlaylistUsermod::_ideal_change_max[]    PROGMEM = "ideal_change_max";
