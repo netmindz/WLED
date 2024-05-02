@@ -477,6 +477,20 @@ void BusNetwork::cleanup() {
   if (_data != nullptr) free(_data);
   _data = nullptr;
 }
+// ***************************************************************************
+void BusFastLED::setPixelColor(uint16_t pix, uint32_t c) {
+  this->leds[pix].r = R(c);
+  this->leds[pix].g = G(c);
+  this->leds[pix].b = B(c);
+}
+
+void BusFastLED::show() {
+  FastLED.show();
+}
+
+void BusFastLED::setBrightness(uint8_t b, bool immediate) {
+  FastLED.setBrightness(b);
+}
 
 // ***************************************************************************
 
@@ -738,6 +752,8 @@ int BusManager::add(BusConfig &bc) {
     DEBUG_PRINTLN("BusManager::add - Adding BusHub75Matrix");
     busses[numBusses] = new BusHub75Matrix(bc);
 #endif
+  } else if (bc.type = TYPE_FASTLED) {
+    busses[numBusses] = new BusFastLED(bc);
   } else if (IS_DIGITAL(bc.type)) {
     busses[numBusses] = new BusDigital(bc, numBusses, colorOrderMap);
   } else if (bc.type == TYPE_ONOFF) {
