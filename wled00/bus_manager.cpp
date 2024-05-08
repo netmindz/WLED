@@ -480,6 +480,7 @@ void BusNetwork::cleanup() {
 // ***************************************************************************
 
 BusFastLED::BusFastLED(BusConfig &bc) : Bus(bc.type, bc.start, bc.autoWhite) {
+  FastLED.addLeds(this->data, bc.count, bc.start);
 }
 
 void BusFastLED::setPixelColor(uint16_t pix, uint32_t c) {
