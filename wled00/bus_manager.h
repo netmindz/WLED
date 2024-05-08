@@ -335,6 +335,35 @@ class BusNetwork : public Bus {
     byte     *_data;
 };
 
+
+class BusFastLED : public Bus {
+  public:
+    BusFastLED(BusConfig &bc);
+
+    uint16_t getMaxPixels() override { return 1024; };
+    bool hasRGB() { return true; }
+    bool hasWhite() { return false; }
+
+    void setPixelColor(uint16_t pix, uint32_t c);
+    void setBrightness(uint8_t b, bool immediate);
+
+    void show();
+
+    void cleanup() {
+      // TODO
+    }
+
+    // uint8_t getPins(uint8_t* pinArray);
+
+    uint16_t getLength() {
+      return _len;
+    }
+
+  private: 
+    CRGB leds[1024];
+    
+};
+
 #ifdef WLED_ENABLE_HUB75MATRIX
 class BusHub75Matrix : public Bus {
   public:

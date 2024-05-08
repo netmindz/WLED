@@ -478,6 +478,10 @@ void BusNetwork::cleanup() {
   _data = nullptr;
 }
 // ***************************************************************************
+
+BusFastLED::BusFastLED(BusConfig &bc) : Bus(bc.type, bc.start, bc.autoWhite) {
+}
+
 void BusFastLED::setPixelColor(uint16_t pix, uint32_t c) {
   this->leds[pix].r = R(c);
   this->leds[pix].g = G(c);
