@@ -362,7 +362,8 @@ class BusI2SClocklessLedDriver : public Bus {
       return _len;
     }
 
-  private: 
+  private:
+    uint8_t leds[1024*3]; // TODO: dynamic
     I2SClocklessLedDriver driver;  
 };
 

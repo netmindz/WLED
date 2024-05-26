@@ -480,23 +480,19 @@ void BusNetwork::cleanup() {
 // ***************************************************************************
 
 BusI2SClocklessLedDriver::BusI2SClocklessLedDriver(BusConfig &bc) : Bus(bc.type, bc.start, bc.autoWhite) {
-  FastLED.addLeds(this->data, bc.count, bc.start);
-  driver.initled((uint8_t*)leds,pins,NUMSTRIPS,NUM_LEDS_PER_STRIP,ORDER_GRB);
-  driver.setBrightness(10);
-}
+    driver.initled((uint8_t*)leds, bc.pins, 1, bc.count, ORDER_GRB);
+  }
 
 void BusI2SClocklessLedDriver::setPixelColor(uint16_t pix, uint32_t c) {
-  this->leds[pix].r = R(c);
-  this->leds[pix].g = G(c);
-  this->leds[pix].b = B(c);
+  this->driver.setPixel(pix, R(c), G(c), B(c));
 }
 
 void BusI2SClocklessLedDriver::show() {
-  FastLED.show();
+  driver.showPixels();
 }
 
 void BusI2SClocklessLedDriver::setBrightness(uint8_t b, bool immediate) {
-  FastLED.setBrightness(b);
+  driver.setBrightness(b);
 }
 
 // ***************************************************************************
