@@ -481,6 +481,8 @@ void BusNetwork::cleanup() {
 
 BusI2SClocklessLedDriver::BusI2SClocklessLedDriver(BusConfig &bc) : Bus(bc.type, bc.start, bc.autoWhite) {
   FastLED.addLeds(this->data, bc.count, bc.start);
+  driver.initled((uint8_t*)leds,pins,NUMSTRIPS,NUM_LEDS_PER_STRIP,ORDER_GRB);
+  driver.setBrightness(10);
 }
 
 void BusI2SClocklessLedDriver::setPixelColor(uint16_t pix, uint32_t c) {
