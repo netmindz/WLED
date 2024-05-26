@@ -8,7 +8,7 @@
 #include <ESP32-VirtualMatrixPanel-I2S-DMA.h>
 #endif
 
-#include "I2SClocklessLedDriver.h"
+#include "I2SClocklessVirtualLedDriver.h"
 
 /*
  * Class for addressing various light types
@@ -364,7 +364,7 @@ class BusI2SClocklessLedDriver : public Bus {
 
   private:
     uint8_t leds[1024*3]; // TODO: dynamic
-    I2SClocklessLedDriver driver;  
+    I2SClocklessVirtualLedDriver driver;  
 };
 
 #ifdef WLED_ENABLE_HUB75MATRIX

@@ -480,8 +480,9 @@ void BusNetwork::cleanup() {
 // ***************************************************************************
 
 BusI2SClocklessLedDriver::BusI2SClocklessLedDriver(BusConfig &bc) : Bus(bc.type, bc.start, bc.autoWhite) {
-    driver.initled((uint8_t*)leds, bc.pins, 1, bc.count, ORDER_GRB);
-  }
+  int pins[1] = { bc.pins[0] };
+  driver.initled((uint8_t*)leds, pins, -1, -1);
+}
 
 void BusI2SClocklessLedDriver::setPixelColor(uint16_t pix, uint32_t c) {
   this->driver.setPixel(pix, R(c), G(c), B(c));
