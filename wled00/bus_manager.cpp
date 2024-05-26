@@ -479,21 +479,21 @@ void BusNetwork::cleanup() {
 }
 // ***************************************************************************
 
-BusFastLED::BusFastLED(BusConfig &bc) : Bus(bc.type, bc.start, bc.autoWhite) {
+BusI2SClocklessLedDriver::BusI2SClocklessLedDriver(BusConfig &bc) : Bus(bc.type, bc.start, bc.autoWhite) {
   FastLED.addLeds(this->data, bc.count, bc.start);
 }
 
-void BusFastLED::setPixelColor(uint16_t pix, uint32_t c) {
+void BusI2SClocklessLedDriver::setPixelColor(uint16_t pix, uint32_t c) {
   this->leds[pix].r = R(c);
   this->leds[pix].g = G(c);
   this->leds[pix].b = B(c);
 }
 
-void BusFastLED::show() {
+void BusI2SClocklessLedDriver::show() {
   FastLED.show();
 }
 
-void BusFastLED::setBrightness(uint8_t b, bool immediate) {
+void BusI2SClocklessLedDriver::setBrightness(uint8_t b, bool immediate) {
   FastLED.setBrightness(b);
 }
 
@@ -758,7 +758,7 @@ int BusManager::add(BusConfig &bc) {
     busses[numBusses] = new BusHub75Matrix(bc);
 #endif
   } else if (bc.type = TYPE_FASTLED) {
-    busses[numBusses] = new BusFastLED(bc);
+    busses[numBusses] = new BusI2SClocklessLedDriver(bc);
   } else if (IS_DIGITAL(bc.type)) {
     busses[numBusses] = new BusDigital(bc, numBusses, colorOrderMap);
   } else if (bc.type == TYPE_ONOFF) {

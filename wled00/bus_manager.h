@@ -7,6 +7,9 @@
 #include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
 #include <ESP32-VirtualMatrixPanel-I2S-DMA.h>
 #endif
+
+#include "I2SClocklessLedDriver.h"
+
 /*
  * Class for addressing various light types
  */
@@ -336,11 +339,11 @@ class BusNetwork : public Bus {
 };
 
 
-class BusFastLED : public Bus {
+class BusI2SClocklessLedDriver : public Bus {
   public:
-    BusFastLED(BusConfig &bc);
+    BusI2SClocklessLedDriver(BusConfig &bc);
 
-    uint16_t getMaxPixels() override { return 1024; };
+    uint16_t getMaxPixels() override { return 1024; }; // TODO: dynamic
     bool hasRGB() { return true; }
     bool hasWhite() { return false; }
 
@@ -360,8 +363,7 @@ class BusFastLED : public Bus {
     }
 
   private: 
-    CRGB leds[1024];
-    
+    I2SClocklessLedDriver driver;  
 };
 
 #ifdef WLED_ENABLE_HUB75MATRIX
