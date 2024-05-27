@@ -492,12 +492,13 @@ BusI2SClocklessLedDriver::BusI2SClocklessLedDriver(BusConfig &bc) : Bus(bc.type,
     USER_PRINTF("initled using pin %d for %d LEDs\n", _pins[0], bc.count);
     colorarrangment color;
     switch(bc.colorOrder) {
-      case 0: color = ORDER_RGB; break;
-      case 1: color = ORDER_GRB; break;
+      case 0: color = ORDER_GRB; break;
+      case 1: color = ORDER_RGB; break;
       case 2: color = ORDER_BGR; break;
     }
 
     driver.initled((uint8_t*)leds, _pins, 1, bc.count, color);
+    _len = bc.count;
     _valid = true;
   }
 

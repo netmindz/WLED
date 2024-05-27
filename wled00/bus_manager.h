@@ -357,6 +357,10 @@ class BusI2SClocklessLedDriver : public Bus {
     uint16_t getLength() {
       return _len;
     }
+  
+  ~BusI2SClocklessLedDriver() {
+    cleanup();
+  }
 
   private:
     uint8_t leds[1024*3]; // TODO: dynamic
