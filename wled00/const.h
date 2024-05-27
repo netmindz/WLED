@@ -245,7 +245,7 @@
 #define TYPE_P9813               53
 #define TYPE_LPD6803             54
 
-#define TYPE_FASTLED             60
+#define TYPE_I2SCL               61
 
 #define TYPE_HUB75MATRIX         100 // 100 - 110
 

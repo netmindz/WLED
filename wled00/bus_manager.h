@@ -1,8 +1,6 @@
 #ifndef BusManager_h
 #define BusManager_h
 
-#include <FastLED.h>
-
 #ifdef WLED_ENABLE_HUB75MATRIX
 #include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
 #include <ESP32-VirtualMatrixPanel-I2S-DMA.h>
