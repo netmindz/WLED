@@ -485,7 +485,7 @@ void BusNetwork::cleanup() {
 // ***************************************************************************
 
 BusI2SClocklessLedDriver::BusI2SClocklessLedDriver(BusConfig &bc) : Bus(bc.type, bc.start, bc.autoWhite) {
-    driver.initled((uint8_t*)leds, bc.pins, 1, bc.count, ORDER_GRB);
+    driver.initled((uint8_t*)leds, (int*) bc.pins, 1, bc.count, ORDER_GRB);
   }
 
 void BusI2SClocklessLedDriver::setPixelColor(uint16_t pix, uint32_t c) {
@@ -760,7 +760,7 @@ int BusManager::add(BusConfig &bc) {
     DEBUG_PRINTLN("BusManager::add - Adding BusHub75Matrix");
     busses[numBusses] = new BusHub75Matrix(bc);
 #endif
-  } else if (bc.type = TYPE_FASTLED) {
+  } else if (bc.type = TYPE_I2SCL) {
     busses[numBusses] = new BusI2SClocklessLedDriver(bc);
   } else if (IS_DIGITAL(bc.type)) {
     busses[numBusses] = new BusDigital(bc, numBusses, colorOrderMap);
