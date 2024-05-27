@@ -514,6 +514,11 @@ void BusI2SClocklessLedDriver::setBrightness(uint8_t b, bool immediate) {
   if(_valid) driver.setBrightness(b);
 }
 
+uint8_t BusI2SClocklessLedDriver::getPins(uint8_t* pinArray) {
+  pinArray[0] = _pins[0];
+  return 1;
+} 
+
 void BusI2SClocklessLedDriver::cleanup() {
   pinManager.deallocatePin(_pins[0], PinOwner::BusDigital);
 }

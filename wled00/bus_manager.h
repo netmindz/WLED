@@ -352,7 +352,7 @@ class BusI2SClocklessLedDriver : public Bus {
 
     void cleanup();
 
-    // uint8_t getPins(uint8_t* pinArray);
+    uint8_t getPins(uint8_t* pinArray);
 
     uint16_t getLength() {
       return _len;
