@@ -481,6 +481,8 @@ void BusNetwork::cleanup() {
 
 BusFastLED::BusFastLED(BusConfig &bc) : Bus(bc.type, bc.start, bc.autoWhite) {
   // UGLY UGLY workaround for compile-time pin value in FastLED template
+  USER_PRINTF("FastLED.addLeds - pin:%d offset:%d, num:%d \n", bc.pins[0], bc.start, bc.count);
+  _len = bc.count;
   switch (bc.pins[0]) {
     #if CONFIG_IDF_TARGET_ESP32
       case 0: FastLED.addLeds<NEOPIXEL, 0>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
@@ -679,6 +681,7 @@ BusFastLED::BusFastLED(BusConfig &bc) : Bus(bc.type, bc.start, bc.autoWhite) {
 
     default: USER_PRINTF("FastLedPin assignment: pin not supported %d\n", bc.pins[0]);
   } //switch pinNr
+  FastLED.clear();
 }
 
 void BusFastLED::setPixelColor(uint16_t pix, uint32_t c) {
@@ -690,6 +693,15 @@ void BusFastLED::setPixelColor(uint16_t pix, uint32_t c) {
 void BusFastLED::show() {
   FastLED.show();
 }
+
+uint8_t BusFastLED::getPins(uint8_t* pinArray) {
+  int numPins = 4;
+  for (uint8_t i = 0; i < numPins; i++) {
+    pinArray[i] = _pins[i];
+  }
+  return numPins;
+}
+
 
 void BusFastLED::setBrightness(uint8_t b, bool immediate) {
   FastLED.setBrightness(b);
@@ -955,7 +967,7 @@ int BusManager::add(BusConfig &bc) {
     DEBUG_PRINTLN("BusManager::add - Adding BusHub75Matrix");
     busses[numBusses] = new BusHub75Matrix(bc);
 #endif
-  } else if (bc.type = TYPE_FASTLED) {
+  } else if (bc.type == TYPE_FASTLED) {
     busses[numBusses] = new BusFastLED(bc);
   } else if (IS_DIGITAL(bc.type)) {
     busses[numBusses] = new BusDigital(bc, numBusses, colorOrderMap);

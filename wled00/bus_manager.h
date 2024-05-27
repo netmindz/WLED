@@ -353,7 +353,7 @@ class BusFastLED : public Bus {
       // TODO
     }
 
-    // uint8_t getPins(uint8_t* pinArray);
+    uint8_t getPins(uint8_t* pinArray);
 
     uint16_t getLength() {
       return _len;
@@ -361,6 +361,7 @@ class BusFastLED : public Bus {
 
   private: 
     CRGB leds[1024];
+    uint8_t _pins[4] = {255};
     
 };
 
