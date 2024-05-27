@@ -350,9 +350,7 @@ class BusI2SClocklessLedDriver : public Bus {
 
     void show();
 
-    void cleanup() {
-      // TODO
-    }
+    void cleanup();
 
     // uint8_t getPins(uint8_t* pinArray);
 
@@ -362,7 +360,8 @@ class BusI2SClocklessLedDriver : public Bus {
 
   private:
     uint8_t leds[1024*3]; // TODO: dynamic
-    I2SClocklessLedDriver driver;  
+    I2SClocklessLedDriver driver;
+    int _pins[1] = {255};
 };
 
 #ifdef WLED_ENABLE_HUB75MATRIX

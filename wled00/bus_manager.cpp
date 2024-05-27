@@ -485,20 +485,38 @@ void BusNetwork::cleanup() {
 // ***************************************************************************
 
 BusI2SClocklessLedDriver::BusI2SClocklessLedDriver(BusConfig &bc) : Bus(bc.type, bc.start, bc.autoWhite) {
-    driver.initled((uint8_t*)leds, (int*) bc.pins, 1, bc.count, ORDER_GRB);
+    USER_PRINTF("Construct BusI2SClocklessLedDriver\n");
+    _valid = false;
+    if (!pinManager.allocatePin(bc.pins[0], true, PinOwner::BusDigital)) return;
+    _pins[0] = bc.pins[0];
+    USER_PRINTF("initled using pin %d for %d LEDs\n", _pins[0], bc.count);
+    colorarrangment color;
+    switch(bc.colorOrder) {
+      case 0: color = ORDER_RGB; break;
+      case 1: color = ORDER_GRB; break;
+      case 2: color = ORDER_BGR; break;
+    }
+
+    driver.initled((uint8_t*)leds, _pins, 1, bc.count, color);
+    _valid = true;
   }
 
 void BusI2SClocklessLedDriver::setPixelColor(uint16_t pix, uint32_t c) {
-  this->driver.setPixel(pix, R(c), G(c), B(c));
+  if(_valid) this->driver.setPixel(pix, R(c), G(c), B(c));
 }
 
 void BusI2SClocklessLedDriver::show() {
-  driver.showPixels();
+  if(_valid) driver.showPixels();
 }
 
 void BusI2SClocklessLedDriver::setBrightness(uint8_t b, bool immediate) {
-  driver.setBrightness(b);
+  if(_valid) driver.setBrightness(b);
 }
+
+void BusI2SClocklessLedDriver::cleanup() {
+  pinManager.deallocatePin(_pins[0], PinOwner::BusDigital);
+}
+
 
 // ***************************************************************************
 
@@ -760,7 +778,7 @@ int BusManager::add(BusConfig &bc) {
     DEBUG_PRINTLN("BusManager::add - Adding BusHub75Matrix");
     busses[numBusses] = new BusHub75Matrix(bc);
 #endif
-  } else if (bc.type = TYPE_I2SCL) {
+  } else if (bc.type == TYPE_I2SCL) {
     busses[numBusses] = new BusI2SClocklessLedDriver(bc);
   } else if (IS_DIGITAL(bc.type)) {
     busses[numBusses] = new BusDigital(bc, numBusses, colorOrderMap);
