@@ -478,11 +478,12 @@ void BusNetwork::cleanup() {
   _data = nullptr;
 }
 // ***************************************************************************
-
+CRGB BusFastLED::leds[1024]; // hack - shared between buses
 BusFastLED::BusFastLED(BusConfig &bc) : Bus(bc.type, bc.start, bc.autoWhite) {
   // UGLY UGLY workaround for compile-time pin value in FastLED template
   USER_PRINTF("FastLED.addLeds - pin:%d offset:%d, num:%d \n", bc.pins[0], bc.start, bc.count);
   _len = bc.count;
+  _start = bc.start;
   _pins[0] = bc.pins[0];
   _pins[1] = bc.pins[1]; // TODO: remove once the UI knows we don't need clock pin
   switch (bc.pins[0]) {
@@ -687,6 +688,7 @@ BusFastLED::BusFastLED(BusConfig &bc) : Bus(bc.type, bc.start, bc.autoWhite) {
 }
 
 void BusFastLED::setPixelColor(uint16_t pix, uint32_t c) {
+  pix = pix + _start;
   this->leds[pix].r = R(c);
   this->leds[pix].g = G(c);
   this->leds[pix].b = B(c);
