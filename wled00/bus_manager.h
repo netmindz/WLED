@@ -365,7 +365,7 @@ class BusI2SClocklessLedDriver : public Bus {
   private:
     uint8_t leds[1024*3]; // TODO: dynamic
     I2SClocklessLedDriver driver;
-    int _pins[1] = {255};
+    int _pins[2] = {0,0};
 };
 
 #ifdef WLED_ENABLE_HUB75MATRIX

@@ -489,6 +489,7 @@ BusI2SClocklessLedDriver::BusI2SClocklessLedDriver(BusConfig &bc) : Bus(bc.type,
     _valid = false;
     if (!pinManager.allocatePin(bc.pins[0], true, PinOwner::BusDigital)) return;
     _pins[0] = bc.pins[0];
+    _pins[1] = bc.pins[1]; // TODO: remove once the UI knows we don't need clock pin
     USER_PRINTF("initled using pin %d for %d LEDs\n", _pins[0], bc.count);
     colorarrangment color;
     switch(bc.colorOrder) {
@@ -516,7 +517,8 @@ void BusI2SClocklessLedDriver::setBrightness(uint8_t b, bool immediate) {
 
 uint8_t BusI2SClocklessLedDriver::getPins(uint8_t* pinArray) {
   pinArray[0] = _pins[0];
-  return 1;
+  pinArray[1] = _pins[1];
+  return 2;
 } 
 
 void BusI2SClocklessLedDriver::cleanup() {
