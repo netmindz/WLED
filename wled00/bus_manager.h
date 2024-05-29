@@ -361,7 +361,7 @@ class BusFastLED : public Bus {
 
   private: 
     CRGB leds[1024];
-    uint8_t _pins[4] = {255};
+    uint8_t _pins[4] = {0, 0};
     
 };
 
