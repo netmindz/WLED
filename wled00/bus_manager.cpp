@@ -691,7 +691,7 @@ void BusFastLED::setPixelColor(uint16_t pix, uint32_t c) {
 }
 
 void BusFastLED::show() {
-  FastLED.show();
+  // no action as we call once for all buses
 }
 
 uint8_t BusFastLED::getPins(uint8_t* pinArray) {
@@ -969,6 +969,7 @@ int BusManager::add(BusConfig &bc) {
 #endif
   } else if (bc.type == TYPE_FASTLED) {
     busses[numBusses] = new BusFastLED(bc);
+    hasFastLED = true;
   } else if (IS_DIGITAL(bc.type)) {
     busses[numBusses] = new BusDigital(bc, numBusses, colorOrderMap);
   } else if (bc.type == TYPE_ONOFF) {
@@ -999,6 +1000,9 @@ void BusManager::removeAll() {
 void BusManager::show() {
   for (uint8_t i = 0; i < numBusses; i++) {
     busses[i]->show();
+  }
+  if(hasFastLED) {
+    FastLED.show();
   }
 }
 

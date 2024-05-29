@@ -465,6 +465,7 @@ class BusManager {
     Bus *lastBus = nullptr;
     unsigned laststart = 0;
     unsigned lastend = 0;
+    bool hasFastLED = false;
 
     inline uint8_t getNumVirtualBusses() {
       int j = 0;
