@@ -482,221 +482,256 @@ void BusNetwork::cleanup() {
   if (_data != nullptr) free(_data);
   _data = nullptr;
 }
+
 // ***************************************************************************
+
+// Color correction
+//#define FL_COLORMODE TypicalLEDStrip   // FastLED recommended
+#define FL_COLORMODE UncorrectedColor    // no gamma color correction
+// fastled global LED buffer
 CRGB BusFastLED::leds[1024]; // hack - shared between buses
+
 BusFastLED::BusFastLED(BusConfig &bc) : Bus(bc.type, bc.start, bc.autoWhite) {
   // UGLY UGLY workaround for compile-time pin value in FastLED template
+  _valid = false; // don't use this driver yet
   USER_PRINTF("FastLED.addLeds - pin:%d offset:%d, num:%d \n", bc.pins[0], bc.start, bc.count);
   _len = bc.count;
   _start = bc.start;
+  _type = bc.type;
+  _needsRefresh = true;  // we need "off refresh" for dithering
+  reversed = false;      // not yet supported
   _pins[0] = bc.pins[0];
   _pins[1] = bc.pins[1]; // TODO: remove once the UI knows we don't need clock pin
   switch (bc.pins[0]) {
     #if CONFIG_IDF_TARGET_ESP32
-      case 0: FastLED.addLeds<NEOPIXEL, 0>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 1: FastLED.addLeds<NEOPIXEL, 1>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 2: FastLED.addLeds<NEOPIXEL, 2>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 3: FastLED.addLeds<NEOPIXEL, 3>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 4: FastLED.addLeds<NEOPIXEL, 4>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 5: FastLED.addLeds<NEOPIXEL, 5>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 6: FastLED.addLeds<NEOPIXEL, 6>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 7: FastLED.addLeds<NEOPIXEL, 7>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 8: FastLED.addLeds<NEOPIXEL, 8>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 9: FastLED.addLeds<NEOPIXEL, 9>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 10: FastLED.addLeds<NEOPIXEL, 10>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 11: FastLED.addLeds<NEOPIXEL, 11>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 12: FastLED.addLeds<NEOPIXEL, 12>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 13: FastLED.addLeds<NEOPIXEL, 13>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 14: FastLED.addLeds<NEOPIXEL, 14>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 15: FastLED.addLeds<NEOPIXEL, 15>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
+      case 0: FastLED.addLeds<NEOPIXEL, 0>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 1: FastLED.addLeds<NEOPIXEL, 1>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 2: FastLED.addLeds<NEOPIXEL, 2>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 3: FastLED.addLeds<NEOPIXEL, 3>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 4: FastLED.addLeds<NEOPIXEL, 4>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 5: FastLED.addLeds<NEOPIXEL, 5>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 6: FastLED.addLeds<NEOPIXEL, 6>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 7: FastLED.addLeds<NEOPIXEL, 7>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 8: FastLED.addLeds<NEOPIXEL, 8>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 9: FastLED.addLeds<NEOPIXEL, 9>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 10: FastLED.addLeds<NEOPIXEL, 10>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 11: FastLED.addLeds<NEOPIXEL, 11>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 12: FastLED.addLeds<NEOPIXEL, 12>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 13: FastLED.addLeds<NEOPIXEL, 13>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 14: FastLED.addLeds<NEOPIXEL, 14>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 15: FastLED.addLeds<NEOPIXEL, 15>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
   #if !defined(BOARD_HAS_PSRAM) && !defined(ARDUINO_ESP32_PICO)
       // 16+17 = reserved for PSRAM, or reserved for FLASH on pico-D4
-      case 16: FastLED.addLeds<NEOPIXEL, 16>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 17: FastLED.addLeds<NEOPIXEL, 17>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
+      case 16: FastLED.addLeds<NEOPIXEL, 16>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 17: FastLED.addLeds<NEOPIXEL, 17>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
   #endif
-      case 18: FastLED.addLeds<NEOPIXEL, 18>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 19: FastLED.addLeds<NEOPIXEL, 19>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 20: FastLED.addLeds<NEOPIXEL, 20>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 21: FastLED.addLeds<NEOPIXEL, 21>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 22: FastLED.addLeds<NEOPIXEL, 22>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 23: FastLED.addLeds<NEOPIXEL, 23>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 24: FastLED.addLeds<NEOPIXEL, 24>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 25: FastLED.addLeds<NEOPIXEL, 25>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 26: FastLED.addLeds<NEOPIXEL, 26>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 27: FastLED.addLeds<NEOPIXEL, 27>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 28: FastLED.addLeds<NEOPIXEL, 28>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 29: FastLED.addLeds<NEOPIXEL, 29>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 30: FastLED.addLeds<NEOPIXEL, 30>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 31: FastLED.addLeds<NEOPIXEL, 31>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 32: FastLED.addLeds<NEOPIXEL, 32>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 33: FastLED.addLeds<NEOPIXEL, 33>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
+      case 18: FastLED.addLeds<NEOPIXEL, 18>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 19: FastLED.addLeds<NEOPIXEL, 19>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 20: FastLED.addLeds<NEOPIXEL, 20>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 21: FastLED.addLeds<NEOPIXEL, 21>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 22: FastLED.addLeds<NEOPIXEL, 22>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 23: FastLED.addLeds<NEOPIXEL, 23>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 24: FastLED.addLeds<NEOPIXEL, 24>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 25: FastLED.addLeds<NEOPIXEL, 25>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 26: FastLED.addLeds<NEOPIXEL, 26>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 27: FastLED.addLeds<NEOPIXEL, 27>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 28: FastLED.addLeds<NEOPIXEL, 28>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 29: FastLED.addLeds<NEOPIXEL, 29>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 30: FastLED.addLeds<NEOPIXEL, 30>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 31: FastLED.addLeds<NEOPIXEL, 31>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 32: FastLED.addLeds<NEOPIXEL, 32>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 33: FastLED.addLeds<NEOPIXEL, 33>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
       // 34-39 input-only
-      // case 34: FastLED.addLeds<NEOPIXEL, 34>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 35: FastLED.addLeds<NEOPIXEL, 35>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 36: FastLED.addLeds<NEOPIXEL, 36>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 37: FastLED.addLeds<NEOPIXEL, 37>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 38: FastLED.addLeds<NEOPIXEL, 38>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 39: FastLED.addLeds<NEOPIXEL, 39>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
+      // case 34: FastLED.addLeds<NEOPIXEL, 34>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 35: FastLED.addLeds<NEOPIXEL, 35>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 36: FastLED.addLeds<NEOPIXEL, 36>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 37: FastLED.addLeds<NEOPIXEL, 37>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 38: FastLED.addLeds<NEOPIXEL, 38>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 39: FastLED.addLeds<NEOPIXEL, 39>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
     #endif //CONFIG_IDF_TARGET_ESP32
 
     #if CONFIG_IDF_TARGET_ESP32S2
-      case 0: FastLED.addLeds<NEOPIXEL, 0>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 1: FastLED.addLeds<NEOPIXEL, 1>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 2: FastLED.addLeds<NEOPIXEL, 2>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 3: FastLED.addLeds<NEOPIXEL, 3>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 4: FastLED.addLeds<NEOPIXEL, 4>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 5: FastLED.addLeds<NEOPIXEL, 5>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 6: FastLED.addLeds<NEOPIXEL, 6>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 7: FastLED.addLeds<NEOPIXEL, 7>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 8: FastLED.addLeds<NEOPIXEL, 8>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 9: FastLED.addLeds<NEOPIXEL, 9>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 10: FastLED.addLeds<NEOPIXEL, 10>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 11: FastLED.addLeds<NEOPIXEL, 11>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 12: FastLED.addLeds<NEOPIXEL, 12>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 13: FastLED.addLeds<NEOPIXEL, 13>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 14: FastLED.addLeds<NEOPIXEL, 14>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 15: FastLED.addLeds<NEOPIXEL, 15>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 16: FastLED.addLeds<NEOPIXEL, 16>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 17: FastLED.addLeds<NEOPIXEL, 17>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 18: FastLED.addLeds<NEOPIXEL, 18>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
+      case 0: FastLED.addLeds<NEOPIXEL, 0>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 1: FastLED.addLeds<NEOPIXEL, 1>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 2: FastLED.addLeds<NEOPIXEL, 2>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 3: FastLED.addLeds<NEOPIXEL, 3>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 4: FastLED.addLeds<NEOPIXEL, 4>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 5: FastLED.addLeds<NEOPIXEL, 5>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 6: FastLED.addLeds<NEOPIXEL, 6>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 7: FastLED.addLeds<NEOPIXEL, 7>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 8: FastLED.addLeds<NEOPIXEL, 8>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 9: FastLED.addLeds<NEOPIXEL, 9>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 10: FastLED.addLeds<NEOPIXEL, 10>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 11: FastLED.addLeds<NEOPIXEL, 11>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 12: FastLED.addLeds<NEOPIXEL, 12>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 13: FastLED.addLeds<NEOPIXEL, 13>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 14: FastLED.addLeds<NEOPIXEL, 14>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 15: FastLED.addLeds<NEOPIXEL, 15>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 16: FastLED.addLeds<NEOPIXEL, 16>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 17: FastLED.addLeds<NEOPIXEL, 17>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 18: FastLED.addLeds<NEOPIXEL, 18>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
   #if !ARDUINO_USB_CDC_ON_BOOT
       // 19 + 20 = USB HWCDC. reserved for USB port when ARDUINO_USB_CDC_ON_BOOT=1
-      case 19: FastLED.addLeds<NEOPIXEL, 19>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 20: FastLED.addLeds<NEOPIXEL, 20>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
+      case 19: FastLED.addLeds<NEOPIXEL, 19>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 20: FastLED.addLeds<NEOPIXEL, 20>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
   #endif
-      case 21: FastLED.addLeds<NEOPIXEL, 21>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
+      case 21: FastLED.addLeds<NEOPIXEL, 21>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
       // 22 to 32: not connected, or reserved for SPI FLASH
-      // case 22: FastLED.addLeds<NEOPIXEL, 22>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 23: FastLED.addLeds<NEOPIXEL, 23>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 24: FastLED.addLeds<NEOPIXEL, 24>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 25: FastLED.addLeds<NEOPIXEL, 25>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
+      // case 22: FastLED.addLeds<NEOPIXEL, 22>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 23: FastLED.addLeds<NEOPIXEL, 23>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 24: FastLED.addLeds<NEOPIXEL, 24>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 25: FastLED.addLeds<NEOPIXEL, 25>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
   #if !defined(BOARD_HAS_PSRAM)
       // 26-32 = reserved for PSRAM
-      case 26: FastLED.addLeds<NEOPIXEL, 26>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 27: FastLED.addLeds<NEOPIXEL, 27>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 28: FastLED.addLeds<NEOPIXEL, 28>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 29: FastLED.addLeds<NEOPIXEL, 29>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 30: FastLED.addLeds<NEOPIXEL, 30>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 31: FastLED.addLeds<NEOPIXEL, 31>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 32: FastLED.addLeds<NEOPIXEL, 32>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
+      case 26: FastLED.addLeds<NEOPIXEL, 26>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 27: FastLED.addLeds<NEOPIXEL, 27>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 28: FastLED.addLeds<NEOPIXEL, 28>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 29: FastLED.addLeds<NEOPIXEL, 29>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 30: FastLED.addLeds<NEOPIXEL, 30>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 31: FastLED.addLeds<NEOPIXEL, 31>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 32: FastLED.addLeds<NEOPIXEL, 32>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
   #endif
-      case 33: FastLED.addLeds<NEOPIXEL, 33>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 34: FastLED.addLeds<NEOPIXEL, 34>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 35: FastLED.addLeds<NEOPIXEL, 35>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 36: FastLED.addLeds<NEOPIXEL, 36>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 37: FastLED.addLeds<NEOPIXEL, 37>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 38: FastLED.addLeds<NEOPIXEL, 38>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 39: FastLED.addLeds<NEOPIXEL, 39>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 40: FastLED.addLeds<NEOPIXEL, 40>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 41: FastLED.addLeds<NEOPIXEL, 41>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 42: FastLED.addLeds<NEOPIXEL, 42>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 43: FastLED.addLeds<NEOPIXEL, 43>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 44: FastLED.addLeds<NEOPIXEL, 44>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 45: FastLED.addLeds<NEOPIXEL, 45>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
+      case 33: FastLED.addLeds<NEOPIXEL, 33>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 34: FastLED.addLeds<NEOPIXEL, 34>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 35: FastLED.addLeds<NEOPIXEL, 35>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 36: FastLED.addLeds<NEOPIXEL, 36>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 37: FastLED.addLeds<NEOPIXEL, 37>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 38: FastLED.addLeds<NEOPIXEL, 38>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 39: FastLED.addLeds<NEOPIXEL, 39>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 40: FastLED.addLeds<NEOPIXEL, 40>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 41: FastLED.addLeds<NEOPIXEL, 41>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 42: FastLED.addLeds<NEOPIXEL, 42>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 43: FastLED.addLeds<NEOPIXEL, 43>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 44: FastLED.addLeds<NEOPIXEL, 44>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 45: FastLED.addLeds<NEOPIXEL, 45>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
       // 46 input-only
-      // case 46: FastLED.addLeds<NEOPIXEL, 46>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
+      // case 46: FastLED.addLeds<NEOPIXEL, 46>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
     #endif //CONFIG_IDF_TARGET_ESP32S2
 
     #if CONFIG_IDF_TARGET_ESP32C3
-      case 0: FastLED.addLeds<NEOPIXEL, 0>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 1: FastLED.addLeds<NEOPIXEL, 1>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 2: FastLED.addLeds<NEOPIXEL, 2>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 3: FastLED.addLeds<NEOPIXEL, 3>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 4: FastLED.addLeds<NEOPIXEL, 4>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 5: FastLED.addLeds<NEOPIXEL, 5>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 6: FastLED.addLeds<NEOPIXEL, 6>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 7: FastLED.addLeds<NEOPIXEL, 7>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 8: FastLED.addLeds<NEOPIXEL, 8>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 9: FastLED.addLeds<NEOPIXEL, 9>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 10: FastLED.addLeds<NEOPIXEL, 10>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
+      case 0: FastLED.addLeds<NEOPIXEL, 0>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 1: FastLED.addLeds<NEOPIXEL, 1>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 2: FastLED.addLeds<NEOPIXEL, 2>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 3: FastLED.addLeds<NEOPIXEL, 3>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 4: FastLED.addLeds<NEOPIXEL, 4>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 5: FastLED.addLeds<NEOPIXEL, 5>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 6: FastLED.addLeds<NEOPIXEL, 6>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 7: FastLED.addLeds<NEOPIXEL, 7>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 8: FastLED.addLeds<NEOPIXEL, 8>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 9: FastLED.addLeds<NEOPIXEL, 9>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 10: FastLED.addLeds<NEOPIXEL, 10>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
       // 11-17 reserved for SPI FLASH
-      //case 11: FastLED.addLeds<NEOPIXEL, 11>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      //case 12: FastLED.addLeds<NEOPIXEL, 12>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      //case 13: FastLED.addLeds<NEOPIXEL, 13>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      //case 14: FastLED.addLeds<NEOPIXEL, 14>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      //case 15: FastLED.addLeds<NEOPIXEL, 15>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      //case 16: FastLED.addLeds<NEOPIXEL, 16>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      //case 17: FastLED.addLeds<NEOPIXEL, 17>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
+      //case 11: FastLED.addLeds<NEOPIXEL, 11>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      //case 12: FastLED.addLeds<NEOPIXEL, 12>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      //case 13: FastLED.addLeds<NEOPIXEL, 13>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      //case 14: FastLED.addLeds<NEOPIXEL, 14>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      //case 15: FastLED.addLeds<NEOPIXEL, 15>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      //case 16: FastLED.addLeds<NEOPIXEL, 16>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      //case 17: FastLED.addLeds<NEOPIXEL, 17>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
   #if !ARDUINO_USB_CDC_ON_BOOT
       // 18 + 19 = USB HWCDC. reserved for USB port when ARDUINO_USB_CDC_ON_BOOT=1
-      case 18: FastLED.addLeds<NEOPIXEL, 18>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 19: FastLED.addLeds<NEOPIXEL, 19>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
+      case 18: FastLED.addLeds<NEOPIXEL, 18>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 19: FastLED.addLeds<NEOPIXEL, 19>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
   #endif
       // 20+21 = Serial RX+TX --> don't use for LEDS when serial-to-USB is needed
-      case 20: FastLED.addLeds<NEOPIXEL, 20>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 21: FastLED.addLeds<NEOPIXEL, 21>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
+      case 20: FastLED.addLeds<NEOPIXEL, 20>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 21: FastLED.addLeds<NEOPIXEL, 21>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
     #endif //CONFIG_IDF_TARGET_ESP32S2
 
     #if CONFIG_IDF_TARGET_ESP32S3
-      case 0: FastLED.addLeds<NEOPIXEL, 0>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 1: FastLED.addLeds<NEOPIXEL, 1>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 2: FastLED.addLeds<NEOPIXEL, 2>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 3: FastLED.addLeds<NEOPIXEL, 3>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 4: FastLED.addLeds<NEOPIXEL, 4>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 5: FastLED.addLeds<NEOPIXEL, 5>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 6: FastLED.addLeds<NEOPIXEL, 6>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 7: FastLED.addLeds<NEOPIXEL, 7>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 8: FastLED.addLeds<NEOPIXEL, 8>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 9: FastLED.addLeds<NEOPIXEL, 9>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 10: FastLED.addLeds<NEOPIXEL, 10>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 11: FastLED.addLeds<NEOPIXEL, 11>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 12: FastLED.addLeds<NEOPIXEL, 12>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 13: FastLED.addLeds<NEOPIXEL, 13>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 14: FastLED.addLeds<NEOPIXEL, 14>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 15: FastLED.addLeds<NEOPIXEL, 15>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 16: FastLED.addLeds<NEOPIXEL, 16>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 17: FastLED.addLeds<NEOPIXEL, 17>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 18: FastLED.addLeds<NEOPIXEL, 18>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
+      case 0: FastLED.addLeds<NEOPIXEL, 0>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 1: FastLED.addLeds<NEOPIXEL, 1>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 2: FastLED.addLeds<NEOPIXEL, 2>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 3: FastLED.addLeds<NEOPIXEL, 3>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 4: FastLED.addLeds<NEOPIXEL, 4>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 5: FastLED.addLeds<NEOPIXEL, 5>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 6: FastLED.addLeds<NEOPIXEL, 6>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 7: FastLED.addLeds<NEOPIXEL, 7>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 8: FastLED.addLeds<NEOPIXEL, 8>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 9: FastLED.addLeds<NEOPIXEL, 9>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 10: FastLED.addLeds<NEOPIXEL, 10>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 11: FastLED.addLeds<NEOPIXEL, 11>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 12: FastLED.addLeds<NEOPIXEL, 12>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 13: FastLED.addLeds<NEOPIXEL, 13>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 14: FastLED.addLeds<NEOPIXEL, 14>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 15: FastLED.addLeds<NEOPIXEL, 15>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 16: FastLED.addLeds<NEOPIXEL, 16>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 17: FastLED.addLeds<NEOPIXEL, 17>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 18: FastLED.addLeds<NEOPIXEL, 18>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
   #if !ARDUINO_USB_CDC_ON_BOOT
       // 19 + 20 = USB-JTAG. Not recommended for other uses.
-      case 19: FastLED.addLeds<NEOPIXEL, 19>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 20: FastLED.addLeds<NEOPIXEL, 20>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
+      case 19: FastLED.addLeds<NEOPIXEL, 19>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 20: FastLED.addLeds<NEOPIXEL, 20>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
   #endif
-      case 21: FastLED.addLeds<NEOPIXEL, 21>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
+      case 21: FastLED.addLeds<NEOPIXEL, 21>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
       // // 22 to 32: not connected, or SPI FLASH
-      // case 22: FastLED.addLeds<NEOPIXEL, 22>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 23: FastLED.addLeds<NEOPIXEL, 23>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 24: FastLED.addLeds<NEOPIXEL, 24>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 25: FastLED.addLeds<NEOPIXEL, 25>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 26: FastLED.addLeds<NEOPIXEL, 26>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 27: FastLED.addLeds<NEOPIXEL, 27>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 28: FastLED.addLeds<NEOPIXEL, 28>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 29: FastLED.addLeds<NEOPIXEL, 29>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 30: FastLED.addLeds<NEOPIXEL, 30>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 31: FastLED.addLeds<NEOPIXEL, 31>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      // case 32: FastLED.addLeds<NEOPIXEL, 32>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
+      // case 22: FastLED.addLeds<NEOPIXEL, 22>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 23: FastLED.addLeds<NEOPIXEL, 23>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 24: FastLED.addLeds<NEOPIXEL, 24>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 25: FastLED.addLeds<NEOPIXEL, 25>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 26: FastLED.addLeds<NEOPIXEL, 26>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 27: FastLED.addLeds<NEOPIXEL, 27>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 28: FastLED.addLeds<NEOPIXEL, 28>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 29: FastLED.addLeds<NEOPIXEL, 29>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 30: FastLED.addLeds<NEOPIXEL, 30>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 31: FastLED.addLeds<NEOPIXEL, 31>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      // case 32: FastLED.addLeds<NEOPIXEL, 32>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
   #if !defined(BOARD_HAS_PSRAM)
       // 33 to 37: reserved if using _octal_ SPI Flash or _octal_ PSRAM
-      case 33: FastLED.addLeds<NEOPIXEL, 33>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 34: FastLED.addLeds<NEOPIXEL, 34>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 35: FastLED.addLeds<NEOPIXEL, 35>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 36: FastLED.addLeds<NEOPIXEL, 36>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 37: FastLED.addLeds<NEOPIXEL, 37>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
+      case 33: FastLED.addLeds<NEOPIXEL, 33>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 34: FastLED.addLeds<NEOPIXEL, 34>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 35: FastLED.addLeds<NEOPIXEL, 35>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 36: FastLED.addLeds<NEOPIXEL, 36>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 37: FastLED.addLeds<NEOPIXEL, 37>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
   #endif
-      case 38: FastLED.addLeds<NEOPIXEL, 38>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 39: FastLED.addLeds<NEOPIXEL, 39>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 40: FastLED.addLeds<NEOPIXEL, 40>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 41: FastLED.addLeds<NEOPIXEL, 41>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 42: FastLED.addLeds<NEOPIXEL, 42>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
+      case 38: FastLED.addLeds<NEOPIXEL, 38>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 39: FastLED.addLeds<NEOPIXEL, 39>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 40: FastLED.addLeds<NEOPIXEL, 40>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 41: FastLED.addLeds<NEOPIXEL, 41>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 42: FastLED.addLeds<NEOPIXEL, 42>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
       // 43+44 = Serial RX+TX --> don't use for LEDS when serial-to-USB is needed
-      case 43: FastLED.addLeds<NEOPIXEL, 43>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 44: FastLED.addLeds<NEOPIXEL, 44>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 45: FastLED.addLeds<NEOPIXEL, 45>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 46: FastLED.addLeds<NEOPIXEL, 46>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 47: FastLED.addLeds<NEOPIXEL, 47>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
-      case 48: FastLED.addLeds<NEOPIXEL, 48>(this->leds, bc.start, bc.count).setCorrection(TypicalLEDStrip); break;
+      case 43: FastLED.addLeds<NEOPIXEL, 43>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 44: FastLED.addLeds<NEOPIXEL, 44>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 45: FastLED.addLeds<NEOPIXEL, 45>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 46: FastLED.addLeds<NEOPIXEL, 46>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 47: FastLED.addLeds<NEOPIXEL, 47>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
+      case 48: FastLED.addLeds<NEOPIXEL, 48>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;
     #endif //CONFIG_IDF_TARGET_ESP32S3
 
     default: USER_PRINTF("FastLedPin assignment: pin not supported %d\n", bc.pins[0]);
   } //switch pinNr
+  //FastLED.setDither(0);  // disables dithering --> https://github.com/FastLED/FastLED/wiki/FastLED-Temporal-Dithering
   FastLED.clear();
+  _valid = true; // driver ready for use
 }
 
 void BusFastLED::setPixelColor(uint16_t pix, uint32_t c) {
+  if (!_valid || pix >= _len) return;
+  if (reversed) pix = _len - pix -1;
   pix = pix + _start;
+#if 1
+  // GRB = ws2812b default
   this->leds[pix].r = R(c);
   this->leds[pix].g = G(c);
   this->leds[pix].b = B(c);
+#else
+  // RGB
+  this->leds[pix] = CRGB(G(c), R(c), B(c));
+#endif
+}
+
+uint32_t BusFastLED::getPixelColor(uint16_t pix) {
+  if (!_valid || pix >= _len) return 0;
+  if (reversed) pix = _len - pix -1;
+  pix = pix + _start;
+#if 1
+  // GRB = ws2812b default
+  return uint32_t(this->leds[pix]) & 0x00FFFFFF;
+#else
+  // RGB
+  CRGB yeah = this->leds[pix];
+  return RGBW32(yeah.g, yeah.r, yeah.b, 0);
+#endif
 }
 
 void BusFastLED::show() {
@@ -714,6 +749,7 @@ uint8_t BusFastLED::getPins(uint8_t* pinArray) {
 
 void BusFastLED::setBrightness(uint8_t b, bool immediate) {
   FastLED.setBrightness(b);
+  _bri = b;  // needed for brightness limiter
 }
 
 // ***************************************************************************
