@@ -457,6 +457,8 @@ class BusManager {
       return numBusses;
     }
 
+    bool hasFastLED = false; // can be used to check if FastLED driver is used
+
   private:
     uint8_t numBusses = 0;
     Bus* busses[WLED_MAX_BUSSES+WLED_MIN_VIRTUAL_BUSSES] = {nullptr}; // WLEDMM init array
@@ -465,7 +467,6 @@ class BusManager {
     Bus *lastBus = nullptr;
     unsigned laststart = 0;
     unsigned lastend = 0;
-    bool hasFastLED = false;
 
     inline uint8_t getNumVirtualBusses() {
       int j = 0;

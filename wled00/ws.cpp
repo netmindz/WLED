@@ -273,7 +273,8 @@ static bool sendLiveLedsWs(uint32_t wsClient)  // WLEDMM added "static"
       if ((i/Segment::maxWidth)%(n)) i += Segment::maxWidth * (n-1);
     }
   #endif
-    uint32_t c = restoreColorLossy(strip.getPixelColor(i), stripBrightness); // WLEDMM full bright preview - does _not_ recover ABL reductions
+    uint32_t c = strip.getPixelColor(i);
+    if (busses.hasFastLED == false) c = restoreColorLossy(c, stripBrightness); // WLEDMM full bright preview - does _not_ recover ABL reductions
     // WLEDMM begin: preview with color gamma correction
     if (gammaCorrectPreview) {
       uint8_t w = W(c);  // not sure why, but it looks better if using "white" without corrections
