@@ -4,6 +4,22 @@
 
 #include <Arduino.h>
 #include <IPAddress.h>
+
+// experimental - FastLED I2S driver options
+//#if defined(CONFIG_IDF_TARGET_ESP32) || defined(CONFIG_IDF_TARGET_ESP32S3)  // USE I2S#1 for boards with two I2S units 
+//#define FASTLED_ESP32_I2S true               // use clockless I2S driver instead of RMT
+//#define I2S_DEVICE 1                         // I2S#0 needed by audioreactive
+//#define FASTLED_ESP32_I2S_NUM_DMA_BUFFERS 4  // recommended for solving flicker issues in combination with interrupts triggered by other code parts.
+//#endif
+// experimental - FastLED RMT driver options
+//#define FASTLED_RMT_BUILTIN_DRIVER true        // allow other RMT applications to co-exist //WLEDMM not working on -S2
+//#define FASTLED_RMT_MAX_CHANNELS 1             // only use one RMT channel (slow)
+//#define FASTLED_ESP32_FLASH_LOCK true          // force flash operations to wait until the show() is done - avoids interference with the timing of pixel output
+
+#undef FASTLED_INTERNAL // just to be sure
+#include <FastLED.h>
+
+
 #include "const.h"
 #include "pin_manager.h"
 #include "bus_wrapper.h"
@@ -502,6 +518,7 @@ BusFastLED::BusFastLED(BusConfig &bc) : Bus(bc.type, bc.start, bc.autoWhite) {
   reversed = false;      // not yet supported
   _pins[0] = bc.pins[0];
   _pins[1] = bc.pins[1]; // TODO: remove once the UI knows we don't need clock pin
+  // return; // emergency kill switch
   switch (bc.pins[0]) {
     #if CONFIG_IDF_TARGET_ESP32
       case 0: FastLED.addLeds<NEOPIXEL, 0>(this->leds, bc.start, bc.count).setCorrection(FL_COLORMODE); break;

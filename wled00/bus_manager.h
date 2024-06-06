@@ -1,15 +1,6 @@
 #ifndef BusManager_h
 #define BusManager_h
 
-// experimental
-//#if !defined(WLEDMM_FASTPATH) && (defined(CONFIG_IDF_TARGET_ESP32) || defined(CONFIG_IDF_TARGET_ESP32S3))  // USE I2S#1 on board with two I2S units 
-//#define FASTLED_ESP32_I2S true               // use clockless I2S driver instead of RMT
-//#define I2S_DEVICE 1                         // I2S#0 needed by audioreactive
-//#define FASTLED_ESP32_I2S_NUM_DMA_BUFFERS 4  // recommended for solving flicker issues in combination with interrupts triggered by other code parts.
-//#endif
-#undef FASTLED_INTERNAL // just to be sure
-#include <FastLED.h>
-
 #ifdef WLED_ENABLE_HUB75MATRIX
 #include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
 #include <ESP32-VirtualMatrixPanel-I2S-DMA.h>
