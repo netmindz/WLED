@@ -498,13 +498,25 @@ BusI2SClocklessLedDriver::BusI2SClocklessLedDriver(BusConfig &bc) : Bus(bc.type,
       case 2: color = ORDER_BGR; break;
     }
 
+    #ifdef CONFIG_IDF_TARGET_ESP32S3
+    USER_PRINTLN("no color order support for I2SClockLessLedDriveresp32s3");
+    driver.initled((uint8_t*)leds, _pins, 1, bc.count);
+    #else
     driver.initled((uint8_t*)leds, _pins, 1, bc.count, color);
+    #endif
+
     _len = bc.count;
     _valid = true;
   }
 
 void BusI2SClocklessLedDriver::setPixelColor(uint16_t pix, uint32_t c) {
-  if(_valid) this->driver.setPixel(pix, R(c), G(c), B(c));
+  if(_valid) {
+    #ifdef CONFIG_IDF_TARGET_ESP32S3
+    this->leds[pix] = CRGB(R(c), G(c), B(c));
+    #else
+    this->driver.setPixel(pix, R(c), G(c), B(c));
+    #endif
+  }
 }
 
 void BusI2SClocklessLedDriver::show() {

@@ -6,7 +6,12 @@
 #include <ESP32-VirtualMatrixPanel-I2S-DMA.h>
 #endif
 
+#ifdef CONFIG_IDF_TARGET_ESP32S3
+#include "I2SClockLessLedDriveresp32s3.h"
+#include <FastLED.h>
+#else
 #include "I2SClocklessLedDriver.h"
+#endif
 
 /*
  * Class for addressing various light types
@@ -363,8 +368,13 @@ class BusI2SClocklessLedDriver : public Bus {
   }
 
   private:
+    #ifdef CONFIG_IDF_TARGET_ESP32S3
+    CRGB leds[1024]; // TODO: dynamic
+    I2SClocklessLedDriveresp32S3 driver;
+    #else
     uint8_t leds[1024*3]; // TODO: dynamic
     I2SClocklessLedDriver driver;
+    #endif
     int _pins[2] = {0,0};
 };
 
