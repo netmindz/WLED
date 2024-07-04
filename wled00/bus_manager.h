@@ -382,6 +382,8 @@ class BusI2SClocklessLedDriver : public Bus {
     int _pins[2] = {0,0};
 };
 
+#endif
+
 #ifdef WLED_ENABLE_HUB75MATRIX
 class BusHub75Matrix : public Bus {
   public:
