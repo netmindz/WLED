@@ -6,11 +6,13 @@
 #include <ESP32-VirtualMatrixPanel-I2S-DMA.h>
 #endif
 
+#ifdef WLED_ENABLE_I2SCLOCKLESS
 #ifdef CONFIG_IDF_TARGET_ESP32S3
 #include "I2SClockLessLedDriveresp32s3.h"
 #include <FastLED.h>
 #else
 #include "I2SClocklessLedDriver.h"
+#endif
 #endif
 
 /*
@@ -341,6 +343,7 @@ class BusNetwork : public Bus {
     byte     *_data;
 };
 
+#ifdef WLED_ENABLE_I2SCLOCKLESS
 
 class BusI2SClocklessLedDriver : public Bus {
   public:

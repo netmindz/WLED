@@ -483,6 +483,7 @@ void BusNetwork::cleanup() {
   _data = nullptr;
 }
 // ***************************************************************************
+#ifdef WLED_ENABLE_I2SCLOCKLESS
 
 BusI2SClocklessLedDriver::BusI2SClocklessLedDriver(BusConfig &bc) : Bus(bc.type, bc.start, bc.autoWhite) {
     USER_PRINTF("Construct BusI2SClocklessLedDriver\n");
@@ -537,7 +538,7 @@ void BusI2SClocklessLedDriver::cleanup() {
   pinManager.deallocatePin(_pins[0], PinOwner::BusDigital);
 }
 
-
+#endif
 // ***************************************************************************
 
 #ifdef WLED_ENABLE_HUB75MATRIX
