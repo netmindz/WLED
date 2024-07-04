@@ -375,6 +375,7 @@ class BusI2SClocklessLedDriver : public Bus {
     uint8_t leds[1024*3]; // TODO: dynamic
     I2SClocklessLedDriver driver;
     #endif
+    colorarrangment color;
     int _pins[2] = {0,0};
 };
 

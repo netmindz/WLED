@@ -491,7 +491,6 @@ BusI2SClocklessLedDriver::BusI2SClocklessLedDriver(BusConfig &bc) : Bus(bc.type,
     _pins[0] = bc.pins[0];
     _pins[1] = bc.pins[1]; // TODO: remove once the UI knows we don't need clock pin
     USER_PRINTF("initled using pin %d for %d LEDs\n", _pins[0], bc.count);
-    colorarrangment color;
     switch(bc.colorOrder) {
       case 0: color = ORDER_GRB; break;
       case 1: color = ORDER_RGB; break;
@@ -512,6 +511,7 @@ BusI2SClocklessLedDriver::BusI2SClocklessLedDriver(BusConfig &bc) : Bus(bc.type,
 void BusI2SClocklessLedDriver::setPixelColor(uint16_t pix, uint32_t c) {
   if(_valid) {
     #ifdef CONFIG_IDF_TARGET_ESP32S3
+    // TODO - use this.color to use the right ordering
     this->leds[pix] = CRGB(R(c), G(c), B(c));
     #else
     this->driver.setPixel(pix, R(c), G(c), B(c));
