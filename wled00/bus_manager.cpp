@@ -799,8 +799,10 @@ int BusManager::add(BusConfig &bc) {
     DEBUG_PRINTLN("BusManager::add - Adding BusHub75Matrix");
     busses[numBusses] = new BusHub75Matrix(bc);
 #endif
+#ifdef WLED_ENABLE_I2SCLOCKLESS
   } else if (bc.type == TYPE_I2SCL) {
     busses[numBusses] = new BusI2SClocklessLedDriver(bc);
+#endif
   } else if (IS_DIGITAL(bc.type)) {
     busses[numBusses] = new BusDigital(bc, numBusses, colorOrderMap);
   } else if (bc.type == TYPE_ONOFF) {
