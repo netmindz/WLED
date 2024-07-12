@@ -1870,6 +1870,7 @@ void WS2812FX::estimateCurrentAndLimitBri() {
     return;
   }
 
+  bool isFastLED = busses.hasFastLED;  // if one bus is FastLED, then we can't have any NeoPixel busses (RMT driver conflict)
   uint16_t pLen = getLengthPhysical();
   uint32_t puPerMilliamp = 195075 / actualMilliampsPerLed;
   uint32_t powerBudget = (ablMilliampsMax - MA_FOR_ESP) * puPerMilliamp; //100mA for ESP power
@@ -1889,6 +1890,12 @@ void WS2812FX::estimateCurrentAndLimitBri() {
     for (uint_fast16_t i = 0; i < len; i++) { //sum up the usage of each LED
       uint32_t c = bus->getPixelColor(i);
       byte r = R(c), g = G(c), b = B(c), w = W(c);
+      if (isFastLED) {
+        r = scale8(r, _brightness);
+        g = scale8(g, _brightness);
+        b = scale8(b, _brightness);
+        w = 0;
+      }
 
       if(useWackyWS2815PowerModel) { //ignore white component on WS2815 power calculation
         busPowerSum += (max(max(r,g),b)) * 3; // WLEDMM use native min/max
