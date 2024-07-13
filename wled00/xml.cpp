@@ -269,9 +269,9 @@ void appendGPIOinfo() {
 
   // add info about max. # of pins
   oappend(SET_F("d.max_gpio="));
-  #if defined(ESP32)
+  #if defined(ESP32) && !defined(CONFIG_IDF_TARGET_ESP32S3)
     oappendi(NUM_DIGITAL_PINS - 1);
-  #else //8266
+  #else //8266 (max=17), or esp32-S3 (max=48)
     oappendi(NUM_DIGITAL_PINS); //WLEDMM include pin 17 for Analog
   #endif
   oappend(SET_F(";"));
@@ -792,6 +792,7 @@ void getSettingsJS(AsyncWebServerRequest* request, byte subPage, char* dest) //W
   if (subPage == 8) //usermods
   {
     appendGPIOinfo();
+    oappendUseDeflate(true); // allow replacing long functions with shorter equivalents - only works for usermods
     if (!request->hasParam("um") ) {
       // oappend(SET_F("numM="));
       // oappendi(usermods.getModCount());
@@ -834,6 +835,7 @@ void getSettingsJS(AsyncWebServerRequest* request, byte subPage, char* dest) //W
       Usermod *usermod = usermods.lookupName(request->getParam("um")->value().c_str());
       if (usermod) usermod->appendConfigData();
     }
+    oappendUseDeflate(false);
 
     // oappend(SET_F("console.log('getSettingsJS fix ro pins', d.max_gpio, d.ro_gpio);")); 
     oappend(SET_F("pinPost();")); 
