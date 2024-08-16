@@ -448,6 +448,9 @@ void WLED::setup()
   #ifdef ARDUINO_ARCH_ESP32
   pinMode(hardwareRX, INPUT_PULLDOWN); delay(1);        // suppress noise in case RX pin is floating (at low noise energy) - see issue #3128
   #endif
+  #ifdef WLED_BOOTUPDELAY
+  delay(WLED_BOOTUPDELAY); // delay to let voltage stabilize, helps with boot issues on some setups
+  #endif
   Serial.begin(115200);
   if (!Serial) delay(1000); // WLEDMM make sure that Serial has initalized
 
@@ -1217,7 +1220,7 @@ void WLED::handleConnection()
   #ifdef ARDUINO_ARCH_ESP32 
   // reconnect WiFi to clear stale allocations if heap gets too low
   if ((!strip.isUpdating()) && (now - heapTime > 5000)) { // WLEDMM: updated with better logic for small heap available by block, not total. // WLEDMM trying to use a moment when the strip is idle
-#if defined(ARDUINO_ARCH_ESP32S2)
+#if defined(ARDUINO_ARCH_ESP32S2) || defined(WLED_ENABLE_HUB75MATRIX)
     uint32_t heap = ESP.getFreeHeap(); // WLEDMM works better on -S2
 #else
     uint32_t heap = heap_caps_get_largest_free_block(0x1800); // WLEDMM: This is a better metric for free heap.
