@@ -102,12 +102,11 @@ Segment::Segment(const Segment &orig) {
   DEBUG_PRINTLN(F("-- Copy segment constructor --"));
   memcpy((void*)this, (void*)&orig, sizeof(Segment)); //WLEDMM copy to this
   transitional = false; // copied segment cannot be in transition
-#ifdef WLEDMM_FASTPATH
   // WLEDMM temporarily prevent any fast draw calls to the new segment
   // _isValid2D = false;
   _isSimpleSegment = false;
   _isSuperSimpleSegment = false;
-#endif
+
   name = nullptr;
   data = nullptr;
   _dataLen = 0;
@@ -149,11 +148,11 @@ void Segment::allocLeds() {
 // move constructor --> moves everything (including buffer) from orig to this
 Segment::Segment(Segment &&orig) noexcept {
   DEBUG_PRINTLN(F("-- Move segment constructor --"));
-#ifdef WLEDMM_FASTPATH
+
   // WLEDMM temporarily prevent any fast draw calls to old and new segment
   orig._isSimpleSegment = false;
   orig._isSuperSimpleSegment = false;
-#endif
+
   memcpy((void*)this, (void*)&orig, sizeof(Segment));
   orig.transitional = false; // old segment cannot be in transition any more
 #ifdef WLEDMM_FASTPATH
@@ -184,12 +183,12 @@ Segment& Segment::operator= (const Segment &orig) {
     // copy source
     memcpy((void*)this, (void*)&orig, sizeof(Segment));
     transitional = false;
-#ifdef WLEDMM_FASTPATH
+
     // WLEDMM prevent any fast draw calls to this segment until the next frame starts
     //_isValid2D = false;
     _isSimpleSegment = false;
     _isSuperSimpleSegment = false;
-#endif
+
     // erase pointers to allocated data
     name = nullptr;
     data = nullptr;
@@ -217,11 +216,11 @@ Segment& Segment::operator= (Segment &&orig) noexcept {
     deallocateData(); // free old runtime data
     if (_t) { delete _t; _t = nullptr; }
     if (ledsrgb && !Segment::_globalLeds) free(ledsrgb); //WLEDMM: not needed anymore as we will use leds from copy. no need to nullify ledsrgb as it gets new value in memcpy
-#ifdef WLEDMM_FASTPATH
+
     // WLEDMM temporarily prevent any fast draw calls to old and new segment
     orig._isSimpleSegment = false;
     orig._isSuperSimpleSegment = false;
-#endif
+
     memcpy((void*)this, (void*)&orig, sizeof(Segment));
 #ifdef WLEDMM_FASTPATH
     // WLEDMM temporarily prevent any draw calls to old segment
@@ -971,42 +970,51 @@ void IRAM_ATTR_YN __attribute__((hot)) Segment::setPixelColor(int i, uint32_t co
         if (i==0)
           setPixelColorXY(0, 0, col);
         else {
-          //WLEDMM: drawArc(0, 0, i, col); could work as alternative
+          if (!_isSuperSimpleSegment) { 
+            // WLEDMM: drawArc() is faster if it's NOT "super simple" as the regular M12_pArc
+            // can do "useSymmetry" to speed things along, but a more complicated segment likey
+            // uses mirroring which generates a symmetry speed-up, or other things which mean
+            // less pixels are calculated.
+            drawArc(0, 0, i, col); 
+          } else {
+            //WLEDMM: some optimizations for the drawing loop
+            //  pre-calculate loop limits, exploit symmetry at 45deg
+            float radius = float(i);
+            
+            // float step = HALF_PI / (2.85f * radius);  // upstream uses this
+            float step = HALF_PI / (M_PI * radius);      // WLEDMM we use the correct circumference
+            bool useSymmetry = (max(vH, vW) > 20);       // for segments wider than 20 pixels, we exploit symmetry
+            unsigned numSteps;
+            if (useSymmetry) numSteps = 1 + ((HALF_PI/2.0f + step/2.0f) / step); // with symmetry
+            else             numSteps = 1 + ((HALF_PI      + step/2.0f) / step); // without symmetry
 
-          //WLEDMM: some optimizations for the drawing loop
-          //  pre-calculate loop limits, exploit symmetry at 45deg
-          float radius = float(i);
-          // float step = HALF_PI / (2.85f * radius);  // upstream uses this
-          float step = HALF_PI / (M_PI * radius);      // WLEDMM we use the correct circumference
-          bool useSymmetry = (max(vH, vW) > 20);       // for segments wider than 20 pixels, we exploit symmetry
-          unsigned numSteps;
-          if (useSymmetry) numSteps = 1 + ((HALF_PI/2.0f + step/2.0f) / step); // with symmetry
-          else             numSteps = 1 + ((HALF_PI      + step/2.0f) / step); // without symmetry
+            float rad = 0.0f;
+            for (unsigned count = 0; count < numSteps; count++) {
+              // may want to try float version as well (with or without antialiasing)
+              // int x = max(0, min(vW-1, (int)roundf(sinf(rad) * radius)));
+              // int y = max(0, min(vH-1, (int)roundf(cosf(rad) * radius)));
+              int x = roundf(sinf(rad) * radius);
+              int y = roundf(cosf(rad) * radius);
+              setPixelColorXY(x, y, col);
+              if(useSymmetry) setPixelColorXY(y, x, col);// WLEDMM
+              rad += step;
+            }
 
-          float rad = 0.0f;
-          for (unsigned count = 0; count < numSteps; count++) {
-            // may want to try float version as well (with or without antialiasing)
-            int x = max(0, min(vW-1, (int)roundf(sinf(rad) * radius)));
-            int y = max(0, min(vH-1, (int)roundf(cosf(rad) * radius)));
-            setPixelColorXY(x, y, col);
-            if(useSymmetry) setPixelColorXY(y, x, col);// WLEDMM
-            rad += step;
+            // // Bresenham’s Algorithm (may not fill every pixel)
+            // int d = 3 - (2*i);
+            // int y = i, x = 0;
+            // while (y >= x) {
+            //  setPixelColorXY(x, y, col);
+            //  setPixelColorXY(y, x, col);
+            //  x++;
+            //  if (d > 0) {
+            //    y--;
+            //    d += 4 * (x - y) + 10;
+            //  } else {
+            //    d += 4 * x + 6;
+            //  }
+            // }
           }
-
-          // Bresenham’s Algorithm (may not fill every pixel)
-          //int d = 3 - (2*i);
-          //int y = i, x = 0;
-          //while (y >= x) {
-          //  setPixelColorXY(x, y, col);
-          //  setPixelColorXY(y, x, col);
-          //  x++;
-          //  if (d > 0) {
-          //    y--;
-          //    d += 4 * (x - y) + 10;
-          //  } else {
-          //    d += 4 * x + 6;
-          //  }
-          //}
         }
         break;
       case M12_pCorner: {
