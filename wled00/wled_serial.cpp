@@ -1,10 +1,13 @@
 #include "wled.h"
+#ifdef ARDUINO_ARCH_ESP32
+#include "esp_ota_ops.h"
+#endif
 
 /*
  * Adalight and TPM2 handler
  */
 
-#define SERIAL_MAXTIME_MILLIS 100 // to avoid blocking other activities, do not spend more than 100ms with continouus reading
+#define SERIAL_MAXTIME_MILLIS 100 // to avoid blocking other activities, do not spend more than 100ms with continuous reading
 // at 115200 baud, 100ms is enough to send/receive 1280 chars
 
 enum class AdaState {
@@ -42,6 +45,7 @@ void updateBaudRate(uint32_t rate){
 // RGB LED data return as JSON array. Slow, but easy to use on the other end.
 void sendJSON(){
   if (!pinManager.isPinAllocated(hardwareTX) || pinManager.getPinOwner(hardwareTX) == PinOwner::DebugOut) {
+    if (!Serial) return; // WLEDMM avoid writing to unconnected USB-CDC
     uint16_t used = strip.getLengthTotal();
     Serial.write('[');
     for (uint16_t i=0; i<used; i++) {
@@ -55,6 +59,7 @@ void sendJSON(){
 // RGB LED data returned as bytes in TPM2 format. Faster, and slightly less easy to use on the other end.
 void sendBytes(){
   if (!pinManager.isPinAllocated(hardwareTX) || pinManager.getPinOwner(hardwareTX) == PinOwner::DebugOut) {
+    if (!Serial) return; // WLEDMM avoid writing to unconnected USB-CDC
     Serial.write(0xC9); Serial.write(0xDA);
     uint16_t used = strip.getLengthTotal();
     uint16_t len = used*3;
@@ -117,6 +122,34 @@ void handleSerial()
         } else if (next == 'v') {
           Serial.print("WLED"); Serial.write(' '); Serial.println(VERSION);
 
+        } else if (next == '^') {
+          #ifdef ARDUINO_ARCH_ESP32
+          esp_err_t err;
+          const esp_partition_t *boot_partition = esp_ota_get_boot_partition();
+          const esp_partition_t *running_partition = esp_ota_get_running_partition();
+          USER_PRINTF("Running on %s and we should have booted from %s. This %s\n",running_partition->label,boot_partition->label,(String(running_partition->label) == String(boot_partition->label))?"is what we expect.":"means OTA messed up!");
+          if (String(running_partition->label) == String(boot_partition->label)) {
+            esp_partition_iterator_t new_boot_partition_iterator = NULL;
+            if (boot_partition->subtype == ESP_PARTITION_SUBTYPE_APP_OTA_0) {
+              new_boot_partition_iterator = esp_partition_find(ESP_PARTITION_TYPE_APP,ESP_PARTITION_SUBTYPE_APP_OTA_1,"app1");
+            } else {
+              new_boot_partition_iterator = esp_partition_find(ESP_PARTITION_TYPE_APP,ESP_PARTITION_SUBTYPE_APP_OTA_0,"app0");
+            }
+            const esp_partition_t* new_boot_partition = esp_partition_get(new_boot_partition_iterator);
+            err = esp_ota_set_boot_partition(new_boot_partition);
+            if (err == ESP_OK) {
+              USER_PRINTF("Switching boot partitions from %s to %s in 3 seconds!\n",boot_partition->label,new_boot_partition->label);
+              delay(3000);
+              esp_restart();
+            } else {
+              USER_PRINTF("Looks like the other app partition (%s) is invalid. Ignoring.\n",new_boot_partition->label);
+            }
+          } else {
+            USER_PRINTF("Looks like the other partion is invalid as we exepected %s but we booted failsafe to %s. Ignoring boot change.\n",boot_partition->label,running_partition->label);
+          }
+          #else
+          USER_PRINTLN("Boot partition switching is only available for ESP32 and newer boards.");
+          #endif
         } else if (next == 'X') {
           forceReconnect = true; // WLEDMM - force reconnect via Serial
         } else if (next == 0xB0) {updateBaudRate( 115200);
@@ -136,7 +169,10 @@ void handleSerial()
 
         } else if (next == '{') { //JSON API
           bool verboseResponse = false;
-          if (!requestJSONBufferLock(16)) return;
+          if (!requestJSONBufferLock(16)) {
+             if (Serial) Serial.println(F("{\"error\":3}")); // ERR_NOBUF
+            return;
+          }
           Serial.setTimeout(100);
           DeserializationError error = deserializeJson(doc, Serial);
           if (error) {
@@ -226,6 +262,8 @@ void handleSerial()
   //#ifdef WLED_DEBUG
     if ((millis() - startTime) > SERIAL_MAXTIME_MILLIS) { USER_PRINTLN(F("handleSerial(): need a break after >100ms of activity.")); }
   //#endif
+  #else
+    #pragma message "Serial protocols (AdaLight, Serial JSON, Serial LED driver, improv) disabled"
   #endif
 
   // If Continuous Serial Streaming is enabled, send new LED data as bytes

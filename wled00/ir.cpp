@@ -7,6 +7,7 @@
  */
 
 #if defined(WLED_DISABLE_INFRARED)
+#pragma message "IR remote support disabled"
 void handleIR(){}
 #else
 
@@ -70,15 +71,15 @@ void decBrightness()
   }
 }
 
-// apply preset or fallback to a effect and palette if it doesn't exist
 void presetFallback(uint8_t presetID, uint8_t effectID, uint8_t paletteID)
 {
-  USER_PRINTF("presetFallback1 %d %d %d\n", presetID, effectID, paletteID);
-  applyPreset(presetID, CALL_MODE_BUTTON_PRESET);
+  //USER_PRINTF("presetFallback1 %d %d %d\n", presetID, effectID, paletteID);
+  //applyPreset(presetID, CALL_MODE_BUTTON_PRESET);
   //these two will be overwritten if preset exists in handlePresets()
-  USER_PRINTF("presetFallback2 %d %d %d\n", presetID, effectID, paletteID);
-  effectCurrent = effectID;
-  effectPalette = paletteID;
+  applyPresetWithFallback(presetID, CALL_MODE_BUTTON_PRESET, effectID, paletteID);
+  USER_PRINTF("applyPresetWithFallback %d %d %d\n", presetID, effectID, paletteID);
+  //effectCurrent = effectID;
+  //effectPalette = paletteID;
 }
 
 byte relativeChange(byte property, int8_t amount, byte lowerBoundary, byte higherBoundary)
@@ -717,7 +718,7 @@ void decodeIRJson(uint32_t code)
     } else {
       // HTTP API command
       String apireq = "win"; apireq += '&';                        // reduce flash string usage
-      if (cmdStr.indexOf("~") || fdo["rpt"]) lastValidCode = code; // repeatable action
+      if (cmdStr.indexOf("~") > 0 || fdo["rpt"]) lastValidCode = code; // repeatable action
       if (!cmdStr.startsWith(apireq)) cmdStr = apireq + cmdStr;    // if no "win&" prefix
       if (!irApplyToAllSelected && cmdStr.indexOf(F("SS="))<0) {
         char tmp[10];
@@ -752,7 +753,8 @@ void initIR()
 
 void handleIR()
 {
-  if (irEnabled > 0 && millis() - irCheckedTime > 120 && !strip.isUpdating())
+  if ((irEnabled < 1) || (strip.isUpdating() && (millis() - irCheckedTime < 120))) return;  // WLEDMM be nice, but not too nice
+  if (irEnabled > 0 && millis() - irCheckedTime > 120)                                      // WLEDMM
   {
     irCheckedTime = millis();
     if (irEnabled > 0)

@@ -90,7 +90,11 @@ class AutoSaveUsermod : public Usermod {
       #ifdef USERMOD_FOUR_LINE_DISPLAY
       if (display != nullptr) {
         display->wakeDisplay();
+      #if defined(USE_ALT_DISPLAY) || defined(USE_ALT_DISPlAY)
         if (display->canDraw()) display->overlay("Settings", "Auto Saved", 1500);   // WLEDMM bugfix
+      #else
+        display->overlay("Settings", "Auto Saved", 1500);
+      #endif
       }
       #endif
     }
@@ -105,7 +109,7 @@ class AutoSaveUsermod : public Usermod {
     // network here
     void setup() {
       #ifdef USERMOD_FOUR_LINE_DISPLAY    
-      // This Usermod has enhanced funcionality if
+      // This Usermod has enhanced functionality if
       // FourLineDisplayUsermod is available.
       display = (FourLineDisplayUsermod*) usermods.lookup(USERMOD_ID_FOUR_LINE_DISP);
       #endif
@@ -152,7 +156,7 @@ class AutoSaveUsermod : public Usermod {
 
       if (autoSaveAfter && now > autoSaveAfter) {
         autoSaveAfter = 0;
-        // Time to auto save. You may have some flickry?
+        // Time to auto save. You may have some flickery?
         saveSettings();
         displayOverlay();
       }

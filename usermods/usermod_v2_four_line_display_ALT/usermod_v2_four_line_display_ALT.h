@@ -11,7 +11,7 @@
 #include "4LD_wled_fonts.c"
 
 #ifndef FLD_ESP32_NO_THREADS
-#define FLD_ESP32_USE_THREADS    // comment out to use 0.13.x behaviour without parallel update task - slower, but more robust. May delay other tasks like LEDs or audioreactive!!
+  #define FLD_ESP32_USE_THREADS  // comment out to use 0.13.x behaviour without parallel update task - slower, but more robust. May delay other tasks like LEDs or audioreactive!!
 #endif
 
 //#define OLD_4LD_FONTS          // comment out if you prefer the "classic" look with blocky fonts (saves 1K flash)
@@ -488,7 +488,7 @@ void FourLineDisplayUsermod::draw2x2String(uint8_t col, uint8_t row, const char 
   if (!typeOK || !enabled) return;
   if (u8x8 == nullptr) return;
   if (FLD_SemaphoreTake(drawMux, maxWait) != pdTRUE) return;      // WLEDMM acquire draw mutex
-#if  defined(ARDUINO_ARCH_ESP32) && !defined(OLD_4LD_FONTS)           // WLEDMM use nicer 2x2 font on ESP32
+#if  defined(ARDUINO_ARCH_ESP32) && !defined(OLD_4LD_FONTS) && !defined(WLEDMM_SAVE_FLASH)        // WLEDMM use nicer 2x2 font on ESP32
   if (lineHeight>1) {                            // WLEDMM use 2x3 on 128x64 displays
     //u8x8->setFont(u8x8_font_profont29_2x3_r);   // sans serif 2x3
     u8x8->setFont(u8x8_font_courB18_2x3_r);       // courier bold 2x3
@@ -671,7 +671,7 @@ void FourLineDisplayUsermod::setup() {
     }
     // start SPI now!
 #ifdef ARDUINO_ARCH_ESP32
-    if (isHW) SPI.begin(spi_sclk, spi_miso, spi_mosi);   // ESP32 - will silently fail if SPI alread active.
+    if (isHW) SPI.begin(spi_sclk, spi_miso, spi_mosi);   // ESP32 - will silently fail if SPI already active.
 #else
     if (isHW) SPI.begin();                               // ESP8266 - SPI pins are fixed
 #endif
@@ -1339,7 +1339,7 @@ void FourLineDisplayUsermod::sleepOrClock(bool sleepEnable) {
 bool FourLineDisplayUsermod::handleButton(uint8_t b) {
   yield();
   if (!enabled
-    || b // butto 0 only
+    || b // button 0 only
     || buttonType[b] == BTN_TYPE_SWITCH
     || buttonType[b] == BTN_TYPE_NONE
     || buttonType[b] == BTN_TYPE_RESERVED
@@ -1354,7 +1354,7 @@ bool FourLineDisplayUsermod::handleButton(uint8_t b) {
   static bool buttonLongPressed = false;
   static unsigned long buttonPressedTime = 0;
   static unsigned long buttonWaitTime = 0;
-  bool handled = true;
+  bool handled = false;
 
   //momentary button logic
   if (isButtonPressed(b)) { //pressed
@@ -1363,11 +1363,12 @@ bool FourLineDisplayUsermod::handleButton(uint8_t b) {
     buttonPressedBefore = true;
 
     if (now - buttonPressedTime > 600) { //long press
-      buttonLongPressed = true;
       //TODO: handleButton() handles button 0 without preset in a different way for double click
       //so we need to override with same behaviour
-      longPressAction(0);
-      //handled = false;
+      //DEBUG_PRINTLN(F("4LD action."));
+      //if (!buttonLongPressed) longPressAction(0);
+      buttonLongPressed = true;
+      return false;
     }
 
   } else if (!isButtonPressed(b) && buttonPressedBefore) { //released
@@ -1399,7 +1400,7 @@ bool FourLineDisplayUsermod::handleButton(uint8_t b) {
     buttonWaitTime = 0;
     //TODO: handleButton() handles button 0 without preset in a different way for double click
     //so we need to override with same behaviour
-    shortPressAction(0);
+    //shortPressAction(0);
     //handled = false;
   }
   return handled;

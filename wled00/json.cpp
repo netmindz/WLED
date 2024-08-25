@@ -9,6 +9,7 @@
 #define JSON_PATH_PALETTES   5
 #define JSON_PATH_FXDATA     6
 #define JSON_PATH_NETWORKS   7
+#define JSON_PATH_EFFECTS    8
 
 // begin WLEDMM
 #ifdef ARDUINO_ARCH_ESP32
@@ -82,6 +83,7 @@ bool deserializeSegment(JsonObject elem, byte it, byte presetId)
   if (!elem["rev2D"].isNull()) elem["rY"] = elem["rev2D"];
   if (!elem["rot2D"].isNull()) elem["tp"] = elem["rot2D"];
 
+  bool newSeg = false;
   int stop = elem["stop"] | -1;
 
   // if using vectors use this code to append segment
@@ -89,6 +91,7 @@ bool deserializeSegment(JsonObject elem, byte it, byte presetId)
     if (stop <= 0) return false; // ignore empty/inactive segments
     strip.appendSegment(Segment(0, strip.getLengthTotal()));
     id = strip.getSegmentsNum()-1; // segments are added at the end of list
+    newSeg = true;
   }
 
   // WLEDMM: before changing segments, make sure our strip is _not_ servicing effects in parallel
@@ -188,9 +191,12 @@ bool deserializeSegment(JsonObject elem, byte it, byte presetId)
   }
   if (stop > start && of > len -1) of = len -1;
   seg.setUp(start, stop, grp, spc, of, startY, stopY);
+	if (newSeg) seg.refreshLightCapabilities(); // fix for #3403
 
   if (seg.reset && seg.stop == 0) {
     if (iAmGroot) suspendStripService = false; // WLEDMM release lock
+
+    if (id == strip.getMainSegmentId()) strip.setMainSegmentId(0); // fix for #3403
     return true; // segment was deleted & is marked for reset, no need to change anything else
   }
 
@@ -287,7 +293,14 @@ bool deserializeSegment(JsonObject elem, byte it, byte presetId)
   #endif
 
   byte fx = seg.mode;
-  if (getVal(elem["fx"], &fx, 0, strip.getModeCount())) { //load effect ('r' random, '~' inc/dec, 0-255 exact value)
+  byte last = strip.getModeCount();
+  // partial fix for #3605
+  if (!elem["fx"].isNull() && elem["fx"].is<const char*>()) {
+    const char *tmp = elem["fx"].as<const char *>();
+    if (strlen(tmp) > 3 && (strchr(tmp,'r') || strchr(tmp,'~') != strrchr(tmp,'~'))) last = 0; // we have "X~Y(r|[w]~[-])" form
+  }
+  // end fix
+  if (getVal(elem["fx"], &fx, 0, last)) { //load effect ('r' random, '~' inc/dec, 0-255 exact value, 5~10r pick random between 5 & 10)
     if (!presetId && currentPlaylist>=0) unloadPlaylist();
     if (fx != seg.mode) seg.setMode(fx, elem[F("fxdef")]);
   }
@@ -304,7 +317,7 @@ bool deserializeSegment(JsonObject elem, byte it, byte presetId)
   getVal(elem["c1"], &seg.custom1);
   getVal(elem["c2"], &seg.custom2);
   uint8_t cust3 = seg.custom3;
-  getVal(elem["c3"], &cust3); // we can't pass reference to bifield
+  getVal(elem["c3"], &cust3); // we can't pass reference to bitfield
   seg.custom3 = constrain(cust3, 0, 31);
 
   seg.check1 = elem["o1"] | seg.check1;
@@ -327,8 +340,8 @@ bool deserializeSegment(JsonObject elem, byte it, byte presetId)
       seg.fill(BLACK);  // WLEDMM why now?
     }
 
-    uint16_t start = 0, stop = 0;
-    byte set = 0; //0 nothing set, 1 start set, 2 range set
+    start = 0, stop = 0;
+    set = 0; //0 nothing set, 1 start set, 2 range set
 
     for (size_t i = 0; i < iarr.size(); i++) {
       if(iarr[i].is<JsonInteger>()) {
@@ -363,7 +376,10 @@ bool deserializeSegment(JsonObject elem, byte it, byte presetId)
     strip.trigger(); // force segment update
   }
   // send UDP/WS if segment options changed (except selection; will also deselect current preset)
-  if (seg.differs(prev) & 0x7F) stateChanged = true;
+  if (seg.differs(prev) & 0x7F) {
+    stateChanged = true;
+    if ((seg.on == false) && (prev.on == true) && (prev.freeze == false)) prev.fill(BLACK); // WLEDMM: force BLACK if segment was turned off
+  }
 
   if (iAmGroot) suspendStripService = false; // WLEDMM release lock
   return true;
@@ -457,7 +473,9 @@ bool deserializeState(JsonObject root, byte callMode, byte presetId)
 
   JsonObject udpn      = root["udpn"];
   notifyDirect         = udpn["send"] | notifyDirect;
+  syncGroups           = udpn["sgrp"] | syncGroups;
   receiveNotifications = udpn["recv"] | receiveNotifications;
+  receiveGroups        = udpn["rgrp"] | receiveGroups;
   if ((bool)udpn[F("nn")]) callMode = CALL_MODE_NO_NOTIFY; //send no notification just for this request
 
   unsigned long timein = root["time"] | UINT32_MAX; //backup time source if NTP not synced
@@ -498,7 +516,7 @@ bool deserializeState(JsonObject root, byte callMode, byte presetId)
       //bool didSet = false;
       for (size_t s = 0; s < strip.getSegmentsNum(); s++) {
         Segment &sg = strip.getSegment(s);
-        if (sg.isSelected()) {
+        if (sg.isActive() && sg.isSelected()) {
           inDeepCall = true;  // WLEDMM remember that we are going into recursion
           deserializeSegment(segVar, s, presetId);
           if (iAmGroot) inDeepCall = false;  // WLEDMM toplevel -> reset recursion flag
@@ -579,6 +597,8 @@ bool deserializeState(JsonObject root, byte callMode, byte presetId)
     }
   }
 
+  doAdvancePlaylist = root[F("np")] | doAdvancePlaylist; //advances to next preset in playlist when true
+  
   stateUpdated(callMode);
   if (presetToRestore) currentPreset = presetToRestore;
 
@@ -613,7 +633,8 @@ void serializeSegment(JsonObject& root, Segment& seg, byte id, bool forPreset, b
   root["cct"]    = seg.cct;
   root[F("set")] = seg.set;
 
-  if (segmentBounds && seg.name != nullptr) root["n"] = reinterpret_cast<const char *>(seg.name); //not good practice, but decreases required JSON buffer
+  if (seg.name != nullptr) root["n"] = reinterpret_cast<const char *>(seg.name); //not good practice, but decreases required JSON buffer
+  else if (forPreset) root["n"] = "";
 
   // to conserve RAM we will serialize the col array manually
   // this will reduce RAM footprint from ~300 bytes to 84 bytes per segment
@@ -677,6 +698,27 @@ void serializeState(JsonObject root, bool forPreset, bool includeBri, bool segme
     // USER_PRINTF("serializeState %d\n", netDebugEnabled);
     #endif
 
+    // WLEDMM print error message to netDebug - esp32 only, as 8266 flash is very limited
+#if defined(ARDUINO_ARCH_ESP32) && !defined(WLEDMM_SAVE_FLASH)
+    String errPrefix = F("\nWLED error: ");
+    String warnPrefix = F("WLED warning: ");
+    switch(errorFlag) {
+      case ERR_NONE: break;
+      case ERR_DENIED:    USER_PRINTLN(errPrefix + F("Permission denied.")); break;
+      case ERR_NOBUF:     USER_PRINTLN(warnPrefix + F("JSON buffer was not released in time, request timeout.")); break;
+      case ERR_JSON:      USER_PRINTLN(errPrefix + F("JSON parsing failed (input too large?).")); break;
+      case ERR_FS_BEGIN:  USER_PRINTLN(errPrefix + F("Could not init filesystem (no partition?).")); break;
+      case ERR_FS_QUOTA:  USER_PRINTLN(errPrefix + F("FS is full or the maximum file size is reached.")); break;
+      case ERR_FS_PLOAD:  USER_PRINTLN(warnPrefix + F("Tried loading a preset that does not exist.")); break;
+      case ERR_FS_IRLOAD: USER_PRINTLN(warnPrefix + F("Tried loading an IR JSON cmd, but \"ir.json\" file does not exist.")); break;
+      case ERR_FS_RMLOAD: USER_PRINTLN(warnPrefix + F("Tried loading a remote JSON cmd, but \"remote.json\" file does not exist.")); break;
+      case ERR_FS_GENERAL: USER_PRINTLN(errPrefix + F("general unspecified filesystem error.")); break;
+      default: USER_PRINT(errPrefix + F("error code = ")); USER_PRINTLN(errorFlag); break;
+    }
+#else
+    if (errorFlag) { USER_PRINT(F("\nWLED error code = ")); USER_PRINTLN(errorFlag); }
+#endif
+
     if (errorFlag) {root[F("error")] = errorFlag; errorFlag = ERR_NONE;} //prevent error message to persist on screen
 
     root["ps"] = (currentPreset > 0) ? currentPreset : -1;
@@ -689,15 +731,13 @@ void serializeState(JsonObject root, bool forPreset, bool includeBri, bool segme
     nl["dur"] = nightlightDelayMins;
     nl["mode"] = nightlightMode;
     nl[F("tbri")] = nightlightTargetBri;
-    if (nightlightActive) {
-      nl[F("rem")] = (nightlightDelayMs - (millis() - nightlightStartTime)) / 1000; // seconds remaining
-    } else {
-      nl[F("rem")] = -1;
-    }
+    nl[F("rem")] = nightlightActive ? (int)(nightlightDelayMs - (millis() - nightlightStartTime)) / 1000 : -1; // seconds remaining
 
     JsonObject udpn = root.createNestedObject("udpn");
     udpn["send"] = notifyDirect;
     udpn["recv"] = receiveNotifications;
+    udpn["sgrp"] = syncGroups;
+    udpn["rgrp"] = receiveGroups;
 
     root[F("lor")] = realtimeOverride;
   }
@@ -793,6 +833,7 @@ esp_reset_reason_t getRestartReason() {
 }
 String restartCode2InfoLong(esp_reset_reason_t reason) {
     switch (reason) {
+#if !defined(WLEDMM_SAVE_FLASH)
       case ESP_RST_UNKNOWN:  return(F("Reset reason can not be determined")); break;
       case ESP_RST_POWERON:  return(F("Restart due to power-on event")); break;
       case ESP_RST_EXT:      return(F("Reset by external pin (not applicable for ESP32)")); break;
@@ -804,11 +845,25 @@ String restartCode2InfoLong(esp_reset_reason_t reason) {
       case ESP_RST_DEEPSLEEP:return(F("Restart after exiting deep sleep mode")); break;
       case ESP_RST_BROWNOUT: return(F("Brownout Reset (software or hardware)")); break;
       case ESP_RST_SDIO:     return(F("Reset over SDIO")); break;
+#else
+      case ESP_RST_UNKNOWN:  return(F("ESP_RST_UNKNOWN")); break;
+      case ESP_RST_POWERON:  return(F("ESP_RST_POWERON")); break;
+      case ESP_RST_EXT:      return(F("ESP_RST_EXT")); break;
+      case ESP_RST_SW:       return(F("esp_restart()")); break;
+      case ESP_RST_PANIC:    return(F("SW Panic or Exception")); break;
+      case ESP_RST_INT_WDT:  return(F("ESP_RST_INT_WDT")); break;
+      case ESP_RST_TASK_WDT: return(F("ESP_RST_TASK_WDT")); break;
+      case ESP_RST_WDT:      return(F("ESP_RST_WDT")); break;
+      case ESP_RST_DEEPSLEEP:return(F("ESP_RST_DEEPSLEEP")); break;
+      case ESP_RST_BROWNOUT: return(F("Brownout Reset")); break;
+      case ESP_RST_SDIO:     return(F("ESP_RST_SDIO")); break;
+#endif
     }
   return(F("unknown"));
 }
 String restartCode2Info(esp_reset_reason_t reason) {
     switch (reason) {
+#if !defined(WLEDMM_SAVE_FLASH)
       case ESP_RST_UNKNOWN:  return(F("unknown reason")); break;
       case ESP_RST_POWERON:  return(F("power-on event")); break;
       case ESP_RST_EXT:      return(F("external pin reset")); break;
@@ -820,6 +875,19 @@ String restartCode2Info(esp_reset_reason_t reason) {
       case ESP_RST_DEEPSLEEP:return(F("exit from deep sleep")); break;
       case ESP_RST_BROWNOUT: return(F("Brownout Reset")); break;
       case ESP_RST_SDIO:     return(F("Reset over SDIO")); break;
+#else
+      case ESP_RST_UNKNOWN:  return(F("unknown")); break;
+      case ESP_RST_POWERON:  return(F("power-on")); break;
+      case ESP_RST_EXT:      return(F("ext. pin reset")); break;
+      case ESP_RST_SW:       return(F("SW restart")); break;
+      case ESP_RST_PANIC:    return(F("SW panic or exception")); break;
+      case ESP_RST_INT_WDT:  return(F("int. watchdog")); break;
+      case ESP_RST_TASK_WDT: return(F("task watchdog")); break;
+      case ESP_RST_WDT:      return(F("other watchdog")); break;
+      case ESP_RST_DEEPSLEEP:return(F("deep sleep")); break;
+      case ESP_RST_BROWNOUT: return(F("Brownout")); break;
+      case ESP_RST_SDIO:     return(F("SDIO reset")); break;
+#endif
     }
   return(F("unknown"));
 }
@@ -829,12 +897,14 @@ String restartCode2Info(esp_reset_reason_t reason) {
 void serializeInfo(JsonObject root)
 {
   root[F("ver")] = versionString;
-  root[F("rel")] = releaseString; //WLEDMM to add bin name
   root[F("vid")] = VERSION;
-  //root[F("cn")] = WLED_CODENAME;
+  //root[F("cn")] = F(WLED_CODENAME);    //WLEDMM removed
+  root[F("release")] = FPSTR(releaseString);
+  root[F("rel")] = FPSTR(releaseString); //WLEDMM to add bin name
 
   JsonObject leds = root.createNestedObject("leds");
   leds[F("count")] = strip.getLengthTotal();
+  leds[F("countP")] = strip.getLengthPhysical(); //WLEDMM
   leds[F("pwr")] = strip.currentMilliamps;
   leds["fps"] = strip.getFps();
   leds[F("maxpwr")] = (strip.currentMilliamps)? strip.ablMilliampsMax : 0;
@@ -949,23 +1019,36 @@ void serializeInfo(JsonObject root)
     wifi_info[F("txPower")] = (int) WiFi.getTxPower();
     wifi_info[F("sleep")] = (bool) WiFi.getSleep();
   #endif
-  #if !defined(CONFIG_IDF_TARGET_ESP32C2) && !defined(CONFIG_IDF_TARGET_ESP32C3) && !defined(CONFIG_IDF_TARGET_ESP32S2) && !defined(CONFIG_IDF_TARGET_ESP32S3)
+  //#if !defined(CONFIG_IDF_TARGET_ESP32C2) && !defined(CONFIG_IDF_TARGET_ESP32C6) && !defined(CONFIG_IDF_TARGET_ESP32H2) && !defined(CONFIG_IDF_TARGET_ESP32C3) && !defined(CONFIG_IDF_TARGET_ESP32S2) && !defined(CONFIG_IDF_TARGET_ESP32S3)
+  #if CONFIG_IDF_TARGET_ESP32
     root[F("arch")] = "esp32";
   #else
     root[F("arch")] = ESP.getChipModel();
   #endif
   root[F("core")] = ESP.getSdkVersion();
+  root[F("clock")] = ESP.getCpuFreqMHz();
+  root[F("flash")] = (ESP.getFlashChipSize()/1024)/1024;
   //root[F("maxalloc")] = ESP.getMaxAllocHeap();
   #ifdef WLED_DEBUG
     root[F("resetReason0")] = (int)rtc_get_reset_reason(0);
     if(ESP.getChipCores() > 1)    // WLEDMM
    	  root[F("resetReason1")] = (int)rtc_get_reset_reason(1);
   #endif
+
+  #if defined(ARDUINO_ARCH_ESP32)
+  unsigned long t_wait = millis();
+  while(strip.isUpdating() && (millis() - t_wait < 125)) delay(1); // WLEDMM try to catch a moment when strip is idle
+  while(strip.isUpdating() && (millis() - t_wait < 160)) yield();  //        try harder
+  //if (strip.isUpdating()) USER_PRINTLN("serializeInfo: strip still updating.");
+  #endif
+
   root[F("lwip")] = 0; //deprecated
   root[F("totalheap")] = ESP.getHeapSize(); //WLEDMM
   #else
   root[F("arch")] = "esp8266";
   root[F("core")] = ESP.getCoreVersion();
+  root[F("clock")] = ESP.getCpuFreqMHz();
+  root[F("flash")] = (ESP.getFlashChipSize()/1024)/1024;
   //root[F("maxalloc")] = ESP.getMaxFreeBlockSize();
   #ifdef WLED_DEBUG
     root[F("resetReason")] = (int)ESP.getResetInfoPtr()->reason;
@@ -977,6 +1060,7 @@ void serializeInfo(JsonObject root)
   root[F("freeheap")] = ESP.getFreeHeap();
   //WLEDMM: conditional on esp32
   #if defined(ARDUINO_ARCH_ESP32)
+    root[F("freestack")] = uxTaskGetStackHighWaterMark(NULL); //WLEDMM
     root[F("minfreeheap")] = ESP.getMinFreeHeap();
   #endif
   #if defined(ARDUINO_ARCH_ESP32) && defined(BOARD_HAS_PSRAM)
@@ -984,6 +1068,13 @@ void serializeInfo(JsonObject root)
     root[F("tpram")] = ESP.getPsramSize(); //WLEDMM
     root[F("psram")] = ESP.getFreePsram();
     root[F("psusedram")] = ESP.getMinFreePsram();
+    #if CONFIG_ESP32S3_SPIRAM_SUPPORT  // WLEDMM -S3 has "qspi" or "opi" PSRAM mode
+    #if CONFIG_SPIRAM_MODE_OCT
+      root[F("psrmode")]  = F("🚀 OPI");
+    #elif CONFIG_SPIRAM_MODE_QUAD
+      root[F("psrmode")]  = F("qspi 🛻");
+    #endif
+    #endif
   }
   #else
   // for testing
@@ -1039,7 +1130,7 @@ void serializeInfo(JsonObject root)
   }
   #endif
   #if defined(WLED_DEBUG) || defined(WLED_DEBUG_HOST) || defined(SR_DEBUG) || defined(SR_STATS)
-  // WLEDMM add status of Serial, incuding pin alloc
+  // WLEDMM add status of Serial, including pin alloc
   root[F("serialOnline")] = Serial ? (canUseSerial()?F("Serial ready ☾"):F("Serial in use ☾")) : F("Serial disconected ☾");  // "Disconnected" may happen on boards with USB CDC
   root[F("sRX")] = pinManager.isPinAllocated(hardwareRX) ? pinManager.getPinOwnerText(hardwareRX): F("free");
   root[F("sTX")] = pinManager.isPinAllocated(hardwareTX) ? pinManager.getPinOwnerText(hardwareTX): F("free");
@@ -1083,8 +1174,8 @@ void serializeInfo(JsonObject root)
   #endif
   root[F("opt")] = os;
 
-  root[F("brand")] = "WLED";
-  root[F("product")] = F("FOSS");
+  root[F("brand")] = F(WLED_BRAND); //WLEDMM + Moustachauve/Wled-Native
+  root[F("product")] = F(WLED_PRODUCT_NAME); //WLEDMM + Moustachauve/Wled-Native
   root["mac"] = escapedMac;
   char s[16] = "";
   if (Network.isConnected())
@@ -1174,7 +1265,7 @@ void serializePalettes(JsonObject root, AsyncWebServerRequest* request)
           curPalette.add("r");
           curPalette.add("r");
         break;
-      case 73: //WLEDMM random AC
+      case 74: //WLEDMM random AC
           curPalette.add("r");
           curPalette.add("r");
           curPalette.add("r");
@@ -1194,7 +1285,7 @@ void serializePalettes(JsonObject root, AsyncWebServerRequest* request)
         curPalette.add("c2");
         curPalette.add("c1");
         break;
-      case 5: //primary + secondary (+tert if not off), more distinct
+      case 5: //primary + secondary (+tertiary if not off), more distinct
         curPalette.add("c1");
         curPalette.add("c1");
         curPalette.add("c1");
@@ -1306,9 +1397,9 @@ void serializeNodes(JsonObject root)
 // deserializes mode data string into JsonArray
 void serializeModeData(JsonArray fxdata)
 {
-  char lineBuffer[128];
+  char lineBuffer[192] = { 0 };
   for (size_t i = 0; i < strip.getModeCount(); i++) {
-    strncpy_P(lineBuffer, strip.getModeData(i), 127);
+    strncpy_P(lineBuffer, strip.getModeData(i), sizeof(lineBuffer)-1);
     if (lineBuffer[0] != 0) {
       char* dataPtr = strchr(lineBuffer,'@');
       if (dataPtr) fxdata.add(dataPtr+1);
@@ -1318,11 +1409,11 @@ void serializeModeData(JsonArray fxdata)
 }
 
 // deserializes mode names string into JsonArray
-// also removes effect data extensions (@...) from deserialised names
+// also removes effect data extensions (@...) from deserialized names
 void serializeModeNames(JsonArray arr) {
-  char lineBuffer[128];
+  char lineBuffer[192] = { 0 };
   for (size_t i = 0; i < strip.getModeCount(); i++) {
-    strncpy_P(lineBuffer, strip.getModeData(i), 127);
+    strncpy_P(lineBuffer, strip.getModeData(i), sizeof(lineBuffer)-1);
     if (lineBuffer[0] != 0) {
       char* dataPtr = strchr(lineBuffer,'@');
       if (dataPtr) *dataPtr = 0; // terminate mode data after name
@@ -1330,6 +1421,30 @@ void serializeModeNames(JsonArray arr) {
     }
   }
 }
+
+// Global buffer locking response helper class (to make sure lock is released when AsyncJsonResponse is destroyed)
+class LockedJsonResponse: public AsyncJsonResponse {
+  bool _holding_lock;
+  public:
+  // WARNING: constructor assumes requestJSONBufferLock() was successfully acquired externally/prior to constructing the instance
+  // Not a good practice with C++. Unfortunately AsyncJsonResponse only has 2 constructors - for dynamic buffer or existing buffer,
+  // with existing buffer it clears its content during construction
+  // if the lock was not acquired (using JSONBufferGuard class) previous implementation still cleared existing buffer
+  inline LockedJsonResponse(JsonDocument* doc, bool isArray) : AsyncJsonResponse(doc, isArray), _holding_lock(true) {};
+
+  virtual size_t _fillBuffer(uint8_t *buf, size_t maxLen) { 
+    size_t result = AsyncJsonResponse::_fillBuffer(buf, maxLen);
+    // Release lock as soon as we're done filling content
+    if (((result + _sentLength) >= (_contentLength)) && _holding_lock) {
+      releaseJSONBufferLock();
+      _holding_lock = false;
+    }
+    return result;
+  }
+
+  // destructor will remove JSON buffer lock when response is destroyed in AsyncWebServer
+  virtual ~LockedJsonResponse() { if (_holding_lock) releaseJSONBufferLock(); };
+};
 
 void serveJson(AsyncWebServerRequest* request)
 {
@@ -1339,6 +1454,7 @@ void serveJson(AsyncWebServerRequest* request)
   else if (url.indexOf("info")  > 0) subJson = JSON_PATH_INFO;
   else if (url.indexOf("si")    > 0) subJson = JSON_PATH_STATE_INFO;
   else if (url.indexOf("nodes") > 0) subJson = JSON_PATH_NODES;
+  else if (url.indexOf("eff")   > 0) subJson = JSON_PATH_EFFECTS;
   else if (url.indexOf("palx")  > 0) subJson = JSON_PATH_PALETTES;
   else if (url.indexOf("fxda")  > 0) subJson = JSON_PATH_FXDATA;
   else if (url.indexOf("net") > 0) subJson = JSON_PATH_NETWORKS;
@@ -1378,7 +1494,9 @@ void serveJson(AsyncWebServerRequest* request)
     request->send(503, "application/json", F("{\"error\":3}"));
     return;
   }
-  AsyncJsonResponse *response = new AsyncJsonResponse(&doc, subJson==6);
+  // releaseJSONBufferLock() will be called when "response" is destroyed (from AsyncWebServer)
+  // make sure you delete "response" if no "request->send(response);" is made
+  LockedJsonResponse *response = new LockedJsonResponse(&doc, subJson==JSON_PATH_FXDATA || subJson==JSON_PATH_EFFECTS); // will clear and convert JsonDocument into JsonArray if necessary
 
   JsonVariant lDoc = response->getRoot();
 
@@ -1392,6 +1510,9 @@ void serveJson(AsyncWebServerRequest* request)
       serializeNodes(lDoc); break;
     case JSON_PATH_PALETTES:
       serializePalettes(lDoc, request); break;
+      //serializePalettes(lDoc, request->hasParam("page") ? request->getParam("page")->value().toInt() : 0); break;
+    case JSON_PATH_EFFECTS:
+      serializeModeNames(lDoc); break;
     case JSON_PATH_FXDATA:
       serializeModeData(lDoc.as<JsonArray>()); break;
     case JSON_PATH_NETWORKS:
@@ -1414,11 +1535,12 @@ void serveJson(AsyncWebServerRequest* request)
 
   response->setLength();
   request->send(response);
-  releaseJSONBufferLock();
 }
 
 #ifdef WLED_ENABLE_JSONLIVE
 #define MAX_LIVE_LEDS 180
+
+#warning "JSON Live enabled"
 
 bool serveLiveLeds(AsyncWebServerRequest* request, uint32_t wsClient)
 {
@@ -1432,31 +1554,52 @@ bool serveLiveLeds(AsyncWebServerRequest* request, uint32_t wsClient)
 
   uint16_t used = strip.getLengthTotal();
   uint16_t n = (used -1) /MAX_LIVE_LEDS +1; //only serve every n'th LED if count over MAX_LIVE_LEDS
-  char buffer[2000];
-  strcpy_P(buffer, PSTR("{\"leds\":["));
-  obuf = buffer;
-  olen = 9;
+#ifndef WLED_DISABLE_2D
+  if (strip.isMatrix) {
+    // ignore anything behid matrix (i.e. extra strip)
+    used = Segment::maxWidth*Segment::maxHeight; // always the size of matrix (more or less than strip.getLengthTotal())
+    n = 1;
+    if (used > MAX_LIVE_LEDS) n = 2;
+    if (used > MAX_LIVE_LEDS*4) n = 4;
+  }
+#endif
+
+  DynamicBuffer buffer(9 + (9*MAX_LIVE_LEDS) + 7 + 5 + 6 + 5 + 6 + 5 + 2);  
+  char* buf = buffer.data();      // assign buffer for oappnd() functions
+  strncpy_P(buffer.data(), PSTR("{\"leds\":["), buffer.size());
+  buf += 9; // sizeof(PSTR()) from last line
 
   for (size_t i= 0; i < used; i += n)
   {
     uint32_t c = strip.getPixelColor(i);
-    uint8_t r = qadd8(W(c), R(c)); //add white channel to RGB channels as a simple RGBW -> RGB map
-    uint8_t g = qadd8(W(c), G(c));
-    uint8_t b = qadd8(W(c), B(c));
-    olen += sprintf(obuf + olen, "\"%06X\",", RGBW32(r,g,b,0));
+    // WLEDMM begin: live leds with color gamma correction
+    uint8_t w = W(c);  // not sure why, but it looks better if always using "white" without corrections
+    uint8_t r,g,b;
+    if (gammaCorrectPreview) {
+      r = qadd8(w, unGamma8(R(c))); //R, add white channel to RGB channels as a simple RGBW -> RGB map
+      g = qadd8(w, unGamma8(G(c))); //G
+      b = qadd8(w, unGamma8(B(c))); //B
+    } else {
+    // WLEDMM end
+      r = qadd8(w, R(c)); //add white channel to RGB channels as a simple RGBW -> RGB map
+      g = qadd8(w, G(c));
+      b = qadd8(w, B(c));
+    }
+    buf += sprintf_P(buf, PSTR("\"%06X\","), RGBW32(r,g,b,0));
   }
-  olen -= 1;
-  oappend((const char*)F("],\"n\":"));
-  oappendi(n);
-  oappend("}");
+  buf--;  // remove last comma
+  buf += sprintf_P(buf, PSTR("],\"n\":%d"), n);
+  (*buf++) = '}';
+  (*buf++) = 0;
+  
   if (request) {
-    request->send(200, "application/json", buffer);
+    request->send(200, "application/json", toString(std::move(buffer)));
   }
   #ifdef WLED_ENABLE_WEBSOCKETS
   else {
-    wsc->text(obuf, olen);
+    wsc->text(toString(std::move(buffer)));
   }
-  #endif
+  #endif  
   return true;
 }
 #endif

@@ -18,6 +18,28 @@
 #endif
 // temporary end
 
+// WLEDMM TroyHacks support - SLOWPATH has priority over TWOPATH
+#ifdef WLEDMM_SLOWPATH
+#undef WLEDMM_TWOPATH
+#endif
+
+// WLEDMM repeat definition of USER_PRINT
+bool canUseSerial(void);   // WLEDMM (wled_serial.cpp) returns true if Serial can be used for debug output (i.e. not configured for other purpose)
+#if defined(WLED_DEBUG_HOST)
+  #include "net_debug.h"
+  extern bool netDebugEnabled;
+  #define USER_PRINT(x) (netDebugEnabled || !canUseSerial())?NetDebug.print(x):Serial.print(x)
+  #define USER_PRINTLN(x) (netDebugEnabled || !canUseSerial())?NetDebug.println(x):Serial.println(x)
+  #define USER_PRINTF(x...) (netDebugEnabled || !canUseSerial())?NetDebug.printf(x):Serial.printf(x)
+  #define USER_FLUSH() (netDebugEnabled || !canUseSerial())?NetDebug.flush():Serial.flush()
+#else
+  #define USER_PRINT(x) {if (canUseSerial()) Serial.print(x);}
+  #define USER_PRINTLN(x) {if (canUseSerial()) Serial.println(x);}
+  #define USER_PRINTF(x...) {if (canUseSerial()) Serial.printf(x);}
+  #define USER_FLUSH() {if (canUseSerial()) Serial.flush();}
+#endif
+// WLEDMM end
+
 //Hardware SPI Pins
 #define P_8266_HS_MOSI 13
 #define P_8266_HS_CLK  14
@@ -69,17 +91,17 @@
 #define I_32_RN_NEO_3 21
 #define I_32_I0_NEO_3 22
 #define I_32_I1_NEO_3 23
-#define I_32_BB_NEO_3 24  // bitbangging on ESP32 not recommended
+#define I_32_BB_NEO_3 24  // bitbanging on ESP32 not recommended
 //RGBW
 #define I_32_RN_NEO_4 25
 #define I_32_I0_NEO_4 26
 #define I_32_I1_NEO_4 27
-#define I_32_BB_NEO_4 28  // bitbangging on ESP32 not recommended
+#define I_32_BB_NEO_4 28  // bitbanging on ESP32 not recommended
 //400Kbps
 #define I_32_RN_400_3 29
 #define I_32_I0_400_3 30
 #define I_32_I1_400_3 31
-#define I_32_BB_400_3 32  // bitbangging on ESP32 not recommended
+#define I_32_BB_400_3 32  // bitbanging on ESP32 not recommended
 //TM1814 (RGBW)
 #define I_32_RN_TM1_4 33
 #define I_32_I0_TM1_4 34
@@ -374,7 +396,7 @@ class PolyBus {
       case I_32_I1_UCS_4: (static_cast<B_32_I1_UCS_4*>(busPtr))->Begin(); break;
       #endif
 //      case I_32_BB_UCS_4: (static_cast<B_32_BB_UCS_4*>(busPtr))->Begin(); break;
-      // ESP32 can (and should, to avoid inadvertantly driving the chip select signal) specify the pins used for SPI, but only in begin()
+      // ESP32 can (and should, to avoid inadvertently driving the chip select signal) specify the pins used for SPI, but only in begin()
       case I_HS_DOT_3: beginDotStar<B_HS_DOT_3*>(busPtr, pins[1], -1, pins[0], -1, clock_kHz); break;
       case I_HS_LPD_3: beginDotStar<B_HS_LPD_3*>(busPtr, pins[1], -1, pins[0], -1, clock_kHz); break;
       case I_HS_LPO_3: beginDotStar<B_HS_LPO_3*>(busPtr, pins[1], -1, pins[0], -1, clock_kHz); break;
@@ -389,6 +411,17 @@ class PolyBus {
     }
   };
   static void* create(uint8_t busType, uint8_t* pins, uint16_t len, uint8_t channel, uint16_t clock_kHz = 0U) {
+    #if defined(ARDUINO_ARCH_ESP32) && !(defined(CONFIG_IDF_TARGET_ESP32S2) || defined(CONFIG_IDF_TARGET_ESP32S3) || defined(CONFIG_IDF_TARGET_ESP32C3))
+    #if defined(WLEDMM_FASTPATH) && !defined(WLEDMM_SLOWPATH) // WLEDMM only for fastpath builds.
+    // NOTE: "channel" is only used on ESP32 (and its variants) for RMT channel allocation
+    // since 0.15.0-b3 I2S1 is favoured for classic ESP32 and moved to position 0 (channel 0) so we need to subtract 1 for correct RMT allocation
+  #if defined(WLEDMM_TWOPATH)
+    if (channel > 1) channel--; // accommodate I2S1 which is used as 2nd bus on classic ESP32
+  #else
+    if (channel > 0) channel--; // accommodate I2S1 which is used as 1st bus on classic ESP32
+  #endif
+    #endif
+    #endif
     void* busPtr = nullptr;
     switch (busType) {
       case I_NONE: break;
@@ -423,20 +456,20 @@ class PolyBus {
       case I_8266_BB_UCS_4: busPtr = new B_8266_BB_UCS_4(len, pins[0]); break;
     #endif
     #ifdef ARDUINO_ARCH_ESP32
-      case I_32_RN_NEO_3: busPtr = new B_32_RN_NEO_3(len, pins[0], (NeoBusChannel)channel); break;
+      case I_32_RN_NEO_3: busPtr = new B_32_RN_NEO_3(len, pins[0], (NeoBusChannel)channel); USER_PRINTF("(RMT #%u) ", channel); break;
       #ifndef WLED_NO_I2S0_PIXELBUS
-      case I_32_I0_NEO_3: busPtr = new B_32_I0_NEO_3(len, pins[0]); break;
+      case I_32_I0_NEO_3: busPtr = new B_32_I0_NEO_3(len, pins[0]); USER_PRINT("(I2S #0) "); break;
       #endif
       #ifndef WLED_NO_I2S1_PIXELBUS
-      case I_32_I1_NEO_3: busPtr = new B_32_I1_NEO_3(len, pins[0]); break;
+      case I_32_I1_NEO_3: busPtr = new B_32_I1_NEO_3(len, pins[0]); USER_PRINT("(I2S #1) "); break;
       #endif
 //      case I_32_BB_NEO_3: busPtr = new B_32_BB_NEO_3(len, pins[0], (NeoBusChannel)channel); break;
-      case I_32_RN_NEO_4: busPtr = new B_32_RN_NEO_4(len, pins[0], (NeoBusChannel)channel); break;
+      case I_32_RN_NEO_4: busPtr = new B_32_RN_NEO_4(len, pins[0], (NeoBusChannel)channel); USER_PRINTF("(RGBW RMT #%u) ", channel); break;
       #ifndef WLED_NO_I2S0_PIXELBUS
-      case I_32_I0_NEO_4: busPtr = new B_32_I0_NEO_4(len, pins[0]); break;
+      case I_32_I0_NEO_4: busPtr = new B_32_I0_NEO_4(len, pins[0]); USER_PRINT("(RGBW I2S #0) "); break;
       #endif
       #ifndef WLED_NO_I2S1_PIXELBUS
-      case I_32_I1_NEO_4: busPtr = new B_32_I1_NEO_4(len, pins[0]); break;
+      case I_32_I1_NEO_4: busPtr = new B_32_I1_NEO_4(len, pins[0]); USER_PRINT("(RGBW I2S #1) "); break;
       #endif
 //      case I_32_BB_NEO_4: busPtr = new B_32_BB_NEO_4(len, pins[0], (NeoBusChannel)channel); break;
       case I_32_RN_400_3: busPtr = new B_32_RN_400_3(len, pins[0], (NeoBusChannel)channel); break;
@@ -1177,15 +1210,27 @@ class PolyBus {
       if (num > 3) return I_NONE;
       //if (num > 3) offset = num -4; // I2S not supported yet
       #else
-      #ifndef WLEDMM_FASTPATH
       // standard ESP32 has 8 RMT and 2 I2S channels
-      if (num > 9) return I_NONE;
-      if (num > 7) offset = num -7;
+      #ifndef WLEDMM_FASTPATH
+        #ifdef WLEDMM_SLOWPATH // I2S flickers on large installs. Favor stability over framerate.
+          if (num > 7) return I_NONE;
+        #else
+          if (num == 8) offset = 2;  // first use I2S#1 (so #0 stays available for audio)
+          if (num == 9) offset = 1;  // use I2S#0 as the last driver
+          if (num > 9) return I_NONE;        
+        #endif
       #else
-      // ESP32 "audio_fastpath" - 8 RMT and 1 I2S channels. RMT 5-8 have sending delays, so use I2S#1 before going for RMT 5-8
-      if (num > 8) return I_NONE;
-      if (num == 2) offset = 2;    // use I2S#1 as 3rd bus - seems to be a good compromise for performance
-      //if (num == 0) offset = 2;  // un-comment to use I2S#1 as 1st bus - sometimes helps, if you experience flickering during Wifi or filesystem activity.
+        // ESP32 "audio_fastpath" - 8 RMT and 1 I2S channels. RMT 5-8 have sending delays, so use I2S#1 before going for RMT 5-8
+        #ifdef WLEDMM_SLOWPATH // I2S flickers on large installs. Favor stability over framerate.
+          if (num > 7) return I_NONE;
+        #else
+          if (num > 8) return I_NONE;
+  #if defined(WLEDMM_TWOPATH)
+          if (num == 1) offset = 2;    // use I2S#1 as 2nd bus - seems to be a good compromise for performance, and reduces flickering for some users
+  #else
+          if (num == 0) offset = 2;  //  use I2S#1 as 1st bus - sometimes helps, if you experience flickering during Wifi or filesystem activity.
+  #endif
+        #endif
       #endif
       #endif
       switch (busType) {

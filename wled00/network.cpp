@@ -4,6 +4,8 @@
 
 
 #ifdef WLED_USE_ETHERNET
+#pragma message "Ethernet support enabled"
+
 // The following six pins are neither configurable nor
 // can they be re-assigned through IOMUX / GPIO matrix.
 // See https://docs.espressif.com/projects/esp-idf/en/latest/esp32/hw-reference/esp32/get-started-ethernet-kit-v1.1.html#ip101gri-phy-interface
@@ -87,7 +89,7 @@ const ethernet_settings ethernetBoards[] = {
 
   // ESP32-ETHERNET-KIT-VE
   {
-    0,                    // eth_address,
+    1,                    // eth_address, WLED-MM: Changed from 0 to 1 based on not working with 0 on same devkit.
     5,                    // eth_power,
     23,                   // eth_mdc,
     18,                   // eth_mdio,
@@ -123,7 +125,18 @@ const ethernet_settings ethernetBoards[] = {
     18,                   // eth_mdio,
     ETH_PHY_LAN8720,      // eth_type,
     ETH_CLOCK_GPIO17_OUT  // eth_clk_mode
+  },
+
+  //WLEDMM: Olimex-ESP32-Gateway (like QuinLed-ESP32-Ethernet
+  {
+    0,			              // eth_address,
+    5,			              // eth_power,
+    23,			              // eth_mdc,
+    18,			              // eth_mdio,
+    ETH_PHY_LAN8720,      // eth_type,
+    ETH_CLOCK_GPIO17_OUT	// eth_clk_mode
   }
+
 };
 #endif
 

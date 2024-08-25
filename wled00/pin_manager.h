@@ -26,15 +26,17 @@ enum struct PinOwner : uint8_t {
   Ethernet      = 0x81,
   BusDigital    = 0x82,
   BusOnOff      = 0x83,
-  BusPwm        = 0x84,   // 'BusP' == PWM output using BusPwm
-  Button        = 0x85,   // 'Butn' == button from configuration
-  IR            = 0x86,   // 'IR'   == IR receiver pin from configuration
-  Relay         = 0x87,   // 'Rly'  == Relay pin from configuration
-  SPI_RAM       = 0x88,   // 'SpiR' == SPI RAM
-  DebugOut      = 0x89,   // 'Dbg'  == debug output always IO1
-  DMX           = 0x8A,   // 'DMX'  == hard-coded to IO2
-  HW_I2C        = 0x8B,   // 'I2C'  == hardware I2C pins (4&5 on ESP8266, 21&22 on ESP32)
-  HW_SPI        = 0x8C,   // 'SPI'  == hardware (V)SPI pins (13,14&15 on ESP8266, 5,18&23 on ESP32)
+  BusPwm        = 0x84,   // 'BusP'      == PWM output using BusPwm
+  Button        = 0x85,   // 'Butn'      == button from configuration
+  IR            = 0x86,   // 'IR'        == IR receiver pin from configuration
+  Relay         = 0x87,   // 'Rly'       == Relay pin from configuration
+  SPI_RAM       = 0x88,   // 'SpiR'      == SPI RAM
+  DebugOut      = 0x89,   // 'Dbg'       == debug output always IO1
+  DMX           = 0x8A,   // 'DMX'       == hard-coded to IO2
+  HW_I2C        = 0x8B,   // 'I2C'       == hardware I2C pins (4&5 on ESP8266, 21&22 on ESP32)
+  HW_SPI        = 0x8C,   // 'SPI'       == hardware (V)SPI pins (13,14&15 on ESP8266, 5,18&23 on ESP32)
+  DMX_INPUT     = 0x8D,   // 'DMX_INPUT' == DMX input via serial
+  HUB75         = 0x8E,   // 'Hub75' == Hub75 driver 
   // Use UserMod IDs from const.h here
   UM_Unspecified       = USERMOD_ID_UNSPECIFIED,        // 0x01
   UM_Example           = USERMOD_ID_EXAMPLE,            // 0x02 // Usermod "usermod_v2_example.h"
@@ -60,7 +62,8 @@ enum struct PinOwner : uint8_t {
   UM_BME280            = USERMOD_ID_BME280,             // 0x1E // Usermod "usermod_bme280.h -- Uses "standard" HW_I2C pins
   UM_Audioreactive     = USERMOD_ID_AUDIOREACTIVE,      // 0x20 // Usermod "audio_reactive.h"
   UM_SdCard            = USERMOD_ID_SD_CARD,            // 0x25 // Usermod "usermod_sd_card.h"
-  UM_PWM_OUTPUTS       = USERMOD_ID_PWM_OUTPUTS         // 0x26 // Usermod "usermod_pwm_outputs.h"
+  UM_PWM_OUTPUTS       = USERMOD_ID_PWM_OUTPUTS,        // 0x26 // Usermod "usermod_pwm_outputs.h"
+  UM_LDR_DUSK_DAWN     = USERMOD_ID_LDR_DUSK_DAWN       // 0x2B // Usermod "usermod_LDR_Dusk_Dawn_v2.h"
 };
 static_assert(0u == static_cast<uint8_t>(PinOwner::None), "PinOwner::None must be zero, so default array initialization works as expected");
 
@@ -122,9 +125,9 @@ class PinManagerClass {
   // will return true for reserved pins
   bool isPinAllocated(byte gpio, PinOwner tag = PinOwner::None);
   // will return false for reserved pins
-  bool isPinOk(byte gpio, bool output = true);
+  bool isPinOk(byte gpio, bool output = true) const;
 
-  PinOwner getPinOwner(byte gpio);
+  PinOwner getPinOwner(byte gpio) const;
 
   // WLEDMM begin
   String getOwnerText(PinOwner tag); // WLEDMM  - return PIN owner tag as text

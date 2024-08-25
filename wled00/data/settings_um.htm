@@ -1,9 +1,8 @@
 <!DOCTYPE html>
-<html>
-<head lang="en">
+<html lang="en">
+<head>
 	<meta charset="utf-8">
-	<meta name="viewport" content="width=500">
-	<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+	<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport">
 	<title>Usermod Settings</title>
 	<script>
 	var d = document;
@@ -147,6 +146,9 @@
 			urows += `<br>`;
 		}
 	}
+	function adF(k,f,o,a=false) {  //shortcut for addField(key, field, (sub)object, isArray)
+		return addField(k,f,o,a);
+	}
 	// https://stackoverflow.com/questions/39729741/javascript-change-input-text-to-select-option
 	function addDropdown(um,fld) {
 		let sel = d.createElement('select');
@@ -171,6 +173,9 @@
 		}
 		return null;
 	}
+	function adD(um,fld) { // shortcut for addDropdown(um,fld)
+		return addDropdown(um,fld);
+	}
 	function addOption(sel,txt,val) {
 		if (sel===null) return; // select object missing
 		let opt = d.createElement("option");
@@ -181,6 +186,9 @@
 			let c = sel.childNodes[i];
 			if (c.value == sel.dataset.val) sel.selectedIndex = i;
 		}
+	}
+	function adO(sel,txt,val) { // shortcut for addOption(sel,txt,val)
+		return addOption(sel,txt,val);
 	}
 	//WLEDMM: replace Option to set globals
 	function rOpt(name,el,txt,val) {
@@ -286,6 +294,9 @@
 			if (txt2!="") obj[el].insertAdjacentHTML('beforebegin', txt2 + '&nbsp;');  //add pre texts
 		}
 	}
+	function adI(name,el,txt, txt2="") { // shortcut for addInfo(name,el,txt, txt2="")
+		return addInfo(name,el,txt, txt2);
+	}
 	// add Help Button
 	function addHB(um)
 	{
@@ -371,7 +382,7 @@
 		<span id="lssuc" style="color:green; display:none">&#10004; Configuration saved!</span>
 		<span id="lserr" style="color:red; display:none">&#9888; Could not load configuration.</span>
 		</div>
-		<!-- WLEDMM: no gpios here as it is generated -->
+		<!-- WLEDMM: no GPIOs here as it is generated -->
 		<div id="um">Loading settings...</div>
 		<div name="errorMessage"></div>
 		<hr><button type="button" onclick="B()">Back</button><button type="submit">Save</button>

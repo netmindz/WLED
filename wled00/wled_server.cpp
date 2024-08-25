@@ -58,6 +58,7 @@ void handleUpload(AsyncWebServerRequest *request, const String& filename, size_t
     request->_tempFile.close();
     USER_PRINT(F("File uploaded: "));  // WLEDMM
     USER_PRINTLN(filename);            // WLEDMM
+    invalidateFileNameCache();         // WLEDMM
     if (filename.equalsIgnoreCase("/cfg.json") || filename.equalsIgnoreCase("cfg.json")) { // WLEDMM
       request->send(200, "text/plain", F("Configuration restore successful.\nRebooting..."));
       doReboot = true;
@@ -220,6 +221,8 @@ void initServer()
 
     if (verboseResponse) {
       if (!isConfig) {
+        lastInterfaceUpdate = millis(); // prevent WS update until cooldown
+        interfaceUpdateCallMode = CALL_MODE_WS_SEND; // schedule WS update
         serveJson(request); return; //if JSON contains "v"
       } else {
         doSerializeConfig = true; //serializeConfig(); //Save new settings to FS
@@ -336,6 +339,8 @@ void initServer()
     if(!index){
       DEBUG_PRINTLN(F("OTA Update Start"));
       WLED::instance().disableWatchdog();
+      OTAisRunning = true; // WLEDMM flicker fixer
+      strip.fill(BLACK);
       usermods.onUpdateBegin(true); // notify usermods that update is about to begin (some may require task de-init)
       lastEditTime = millis(); // make sure PIN does not lock during update
       #ifdef ESP8266
@@ -352,6 +357,7 @@ void initServer()
         usermods.onUpdateBegin(false); // notify usermods that update has failed (some may require task init)
         WLED::instance().enableWatchdog();
       }
+      OTAisRunning = false; // WLEDMM flicker fixer
     }
   });
 #else
@@ -575,11 +581,15 @@ void serveSettingsJS(AsyncWebServerRequest* request)
 
   #ifdef ARDUINO_ARCH_ESP32
     DEBUG_PRINT(F("ServeSettingsJS: "));
-    DEBUG_PRINTF("%s min free stack %d\n", pcTaskGetTaskName(NULL), uxTaskGetStackHighWaterMark(NULL)); //WLEDMM
-    DEBUG_PRINTF(PSTR(" bytes.\tString buffer usage: %4d of %d bytes\n"), strlen(buf)+1, SETTINGS_STACK_BUF_SIZE+37);
+    DEBUG_PRINTF("%s min free stack %d", pcTaskGetTaskName(NULL), uxTaskGetStackHighWaterMark(NULL)); //WLEDMM
+    DEBUG_PRINTF(PSTR(" bytes.\t\tString buffer usage: %4d of %d bytes\n"), strlen(buf)+1, SETTINGS_STACK_BUF_SIZE+37);
   #endif
-
-  request->send(200, "application/javascript", buf);
+  
+  AsyncWebServerResponse *response;
+  response = request->beginResponse(200, "application/javascript", buf);
+  response->addHeader(F("Cache-Control"),"no-store");
+  response->addHeader(F("Expires"),"0");
+  request->send(response);
 }
 
 

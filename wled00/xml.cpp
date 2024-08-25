@@ -196,7 +196,11 @@ void appendGPIOinfo() {
   size_t roLen = strlen(ro_gpio);
   char pinString[10];
   for(int pinNr = 0; pinNr < WLED_NUM_PINS; pinNr++) { // 49 = highest PIN on ESP32-S3
-    if(!pinManager.isPinOk(pinNr, false)) {
+  #if defined(ARDUINO_ARCH_ESP32) && !defined(BOARD_HAS_PSRAM)
+    if ((!pinManager.isPinOk(pinNr, false)) || (pinManager.getPinOwner(pinNr) == PinOwner::SPI_RAM)) {  // WLEDMM add SPIRAM pins as "reserved" (pico boards)
+  #else
+    if (!pinManager.isPinOk(pinNr, false)) {
+  #endif
       sprintf(pinString, "%s%d", strlen(rsvd)==rsLen?"":",", pinNr);
       strcat(rsvd, pinString);
     }
@@ -265,16 +269,10 @@ void appendGPIOinfo() {
 
   // add info about max. # of pins
   oappend(SET_F("d.max_gpio="));
-  #if defined(CONFIG_IDF_TARGET_ESP32S2)
-  oappendi(46);
-  #elif defined(CONFIG_IDF_TARGET_ESP32S3)
-  oappendi(48);
-  #elif defined(CONFIG_IDF_TARGET_ESP32C3)
-  oappendi(21);
-  #elif defined(ESP32)
-  oappendi(39);
-  #else //8266
-  oappendi(NUM_DIGITAL_PINS); //WLEDMM include pin 17 for Analog
+  #if defined(ESP32) && !defined(CONFIG_IDF_TARGET_ESP32S3)
+    oappendi(NUM_DIGITAL_PINS - 1);
+  #else //8266 (max=17), or esp32-S3 (max=48)
+    oappendi(NUM_DIGITAL_PINS); //WLEDMM include pin 17 for Analog
   #endif
   oappend(SET_F(";"));
 
@@ -343,7 +341,16 @@ void getSettingsJS(AsyncWebServerRequest* request, byte subPage, char* dest) //W
     sappends('s',SET_F("AP"),fapass);
 
     sappend('v',SET_F("AC"),apChannel);
+    sappend('c',SET_F("FG"),force802_3g);
     sappend('c',SET_F("WS"),noWifiSleep);
+
+    #ifndef WLED_DISABLE_ESPNOW
+    sappend('c',SET_F("RE"),enable_espnow_remote);
+    sappends('s',SET_F("RMAC"),linked_remote);
+    #else
+    //hide remote settings if not compiled
+    oappend(SET_F("document.getElementById('remd').style.display='none';"));
+    #endif
 
     #ifdef WLED_USE_ETHERNET
     sappend('v',SET_F("ETH"),ethernetType);
@@ -377,6 +384,19 @@ void getSettingsJS(AsyncWebServerRequest* request, byte subPage, char* dest) //W
     {
       sappends('m',SET_F("(\"sip\")[1]"),(char*)F("Not active"));
     }
+
+    #ifndef WLED_DISABLE_ESPNOW
+    if (last_signal_src[0] != 0) //Have seen an ESP-NOW Remote
+    {
+      sappends('m',SET_F("(\"rlid\")[0]"),last_signal_src);
+    } else if (!enable_espnow_remote)
+    {
+      sappends('m',SET_F("(\"rlid\")[0]"),(char*)F("(Enable remote to listen)"));
+    } else 
+    {
+      sappends('m',SET_F("(\"rlid\")[0]"),(char*)F("None"));
+    }
+    #endif
   }
 
   if (subPage == 2)
@@ -389,7 +409,6 @@ void getSettingsJS(AsyncWebServerRequest* request, byte subPage, char* dest) //W
     oappend(SET_F("bLimits("));
     oappend(itoa(WLED_MAX_BUSSES,nS,10));  oappend(",");
     oappend(itoa(WLED_MIN_VIRTUAL_BUSSES,nS,10));  oappend(",");
-    oappend(itoa(MAX_LEDS_PER_BUS,nS,10)); oappend(",");
     oappend(itoa(MAX_LED_MEMORY,nS,10));   oappend(",");
     oappend(itoa(MAX_LEDS,nS,10));
     oappend(SET_F(");"));
@@ -450,9 +469,16 @@ void getSettingsJS(AsyncWebServerRequest* request, byte subPage, char* dest) //W
           case  5000 : speed = 2; break;
           case 10000 : speed = 3; break;
           case 20000 : speed = 4; break;
+          case 40000 : speed = 5; break; // WLEDMM max speed 40Mhz - requires carefull wiring
+          case 60000 : speed = 6; break; // WLEDMM overspeed 60Mhz - may or may not work
         }
       }
       sappend('v',sp,speed);
+
+      oappend(SET_F("setPixelLimit("));
+      oappendi(s); oappend(SET_F(","));
+      oappendi(bus->getMaxPixels()); oappend(SET_F(");"));
+
     }
     sappend('v',SET_F("MA"),strip.ablMilliampsMax);
     sappend('v',SET_F("LA"),strip.milliampsPerLed);
@@ -484,6 +510,7 @@ void getSettingsJS(AsyncWebServerRequest* request, byte subPage, char* dest) //W
 
     sappend('c',SET_F("GB"),gammaCorrectBri);
     sappend('c',SET_F("GC"),gammaCorrectCol);
+    sappend('c',SET_F("GCP"),gammaCorrectPreview);   // WLEDMM
     dtostrf(gammaCorrectVal,3,1,nS); sappends('s',SET_F("GV"),nS);
     sappend('c',SET_F("TF"),fadeTransition);
     sappend('v',SET_F("TD"),transitionDelayDefault);
@@ -511,6 +538,10 @@ void getSettingsJS(AsyncWebServerRequest* request, byte subPage, char* dest) //W
     #if !defined(WLED_DISABLE_INFRARED)
     oappend(SET_F("hideNoIR();"));  // WLEDMM hide "not compiled in" message
     #endif
+    #ifndef WLED_ENABLE_HUB75MATRIX
+    oappend(SET_F("hideHub75();"));  // WLEDMM hide HUB75 LED types
+    #endif    
+
   }
 
   if (subPage == 3)
@@ -558,9 +589,10 @@ void getSettingsJS(AsyncWebServerRequest* request, byte subPage, char* dest) //W
     oappend(SET_F("hideDMXInput();"));  // WLEDMM hide "dmx input" settings
 #else
     oappend(SET_F("hideNoDMXInput();"));  // WLEDMM hide "not compiled in" message
-    sappend('v',SET_F("DMT"),dmxTransmitPin);
-    sappend('v',SET_F("DMR"),dmxReceivePin);
-    sappend('v',SET_F("DME"),dmxEnablePin);
+    sappend('v',SET_F("IDMT"),dmxInputTransmitPin);
+    sappend('v',SET_F("IDMR"),dmxInputReceivePin);
+    sappend('v',SET_F("IDME"),dmxInputEnablePin);
+    sappend('v',SET_F("IDMP"),dmxInputPort);
 #endif    
     sappend('v',SET_F("DA"),DMXAddress);
     sappend('v',SET_F("XX"),DMXSegmentSpacing);
@@ -660,7 +692,7 @@ void getSettingsJS(AsyncWebServerRequest* request, byte subPage, char* dest) //W
     sappends('s',SET_F("LT"),tm);
     getTimeString(tm);
     sappends('m',SET_F("(\"times\")[0]"),tm);
-    if ((int)(longitude*10.) || (int)(latitude*10.)) {
+    if ((int)(longitude*10.0f) || (int)(latitude*10.0f)) {
       snprintf_P(tm, sizeof(tm), PSTR("Sunrise: %02d:%02d Sunset: %02d:%02d"), hour(sunrise), minute(sunrise), hour(sunset), minute(sunset));
       sappends('m',SET_F("(\"times\")[1]"),tm);
     }
@@ -762,6 +794,7 @@ void getSettingsJS(AsyncWebServerRequest* request, byte subPage, char* dest) //W
   if (subPage == 8) //usermods
   {
     appendGPIOinfo();
+    oappendUseDeflate(true); // allow replacing long functions with shorter equivalents - only works for usermods
     if (!request->hasParam("um") ) {
       // oappend(SET_F("numM="));
       // oappendi(usermods.getModCount());
@@ -804,6 +837,7 @@ void getSettingsJS(AsyncWebServerRequest* request, byte subPage, char* dest) //W
       Usermod *usermod = usermods.lookupName(request->getParam("um")->value().c_str());
       if (usermod) usermod->appendConfigData();
     }
+    oappendUseDeflate(false);
 
     // oappend(SET_F("console.log('getSettingsJS fix ro pins', d.max_gpio, d.ro_gpio);")); 
     oappend(SET_F("pinPost();")); 
@@ -816,7 +850,7 @@ void getSettingsJS(AsyncWebServerRequest* request, byte subPage, char* dest) //W
     olen -= 2; //delete ";
     oappend(versionString);
     oappend(SET_F(" "));
-    oappend(releaseString);
+    oappend((char*)FPSTR(releaseString));
     oappend(SET_F(".bin<br>("));
     #if defined(CONFIG_IDF_TARGET_ESP32C3)
     oappend(SET_F("ESP32-C3"));

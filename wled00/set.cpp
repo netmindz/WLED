@@ -46,7 +46,16 @@ void handleSettingsSet(AsyncWebServerRequest *request, byte subPage)
     if (passlen == 0 || (passlen > 7 && !isAsterisksOnly(request->arg(F("AP")).c_str(), 65))) strlcpy(apPass, request->arg(F("AP")).c_str(), 65);
     int t = request->arg(F("AC")).toInt(); if (t > 0 && t < 14) apChannel = t;
 
+    force802_3g = request->hasArg(F("FG"));
     noWifiSleep = request->hasArg(F("WS"));
+
+    #ifndef WLED_DISABLE_ESPNOW
+    enable_espnow_remote = request->hasArg(F("RE"));
+    strlcpy(linked_remote,request->arg(F("RMAC")).c_str(), 13);
+
+    //Normalize MAC format to lowercase
+    strlcpy(linked_remote,strlwr(linked_remote), 13);
+    #endif
 
     #ifdef WLED_USE_ETHERNET
     ethernetType = request->arg(F("ETH")).toInt();
@@ -123,7 +132,6 @@ void handleSettingsSet(AsyncWebServerRequest *request, byte subPage)
         pins[i] = (request->arg(lp).length() > 0) ? request->arg(lp).toInt() : 255;
       }
       type = request->arg(lt).toInt();
-      type |= request->hasArg(rf) << 7; // off refresh override
       skip = request->arg(sl).toInt();
       colorOrder = request->arg(co).toInt();
       start = (request->hasArg(ls)) ? request->arg(ls).toInt() : t;
@@ -151,11 +159,14 @@ void handleSettingsSet(AsyncWebServerRequest *request, byte subPage)
           case 2 : freqHz =  5000; break;
           case 3 : freqHz = 10000; break;
           case 4 : freqHz = 20000; break;
+          case 5 : freqHz = 40000; break; // WLEDMM max speed 40Mhz - requires carefull wiring
+          case 6 : freqHz = 60000; break; // WLEDMM overspeed 60Mhz - may or may not work
         }
       } else {
         freqHz = 0;
       }
-      channelSwap = (type == TYPE_SK6812_RGBW || type == TYPE_TM1814) ? request->arg(wo).toInt() : 0;
+      channelSwap = Bus::hasWhite(type) ? request->arg(wo).toInt() : 0;
+      type |= request->hasArg(rf) << 7; // off refresh override
       // actual finalization is done in WLED::loop() (removing old busses and adding new)
       // this may happen even before this loop is finished so we do "doInitBusses" after the loop
       if (busConfigs[s] != nullptr) delete busConfigs[s];
@@ -178,7 +189,7 @@ void handleSettingsSet(AsyncWebServerRequest *request, byte subPage)
     }
     busses.updateColorOrderMap(com);
 
-    // upate other pins
+    // update other pins
     int hw_ir_pin = request->arg(F("IR")).toInt();
     if (pinManager.allocatePin(hw_ir_pin,false, PinOwner::IR)) {
       irPin = hw_ir_pin;
@@ -243,6 +254,7 @@ void handleSettingsSet(AsyncWebServerRequest *request, byte subPage)
     if (t <= 250) bootPreset = t;
     gammaCorrectBri = request->hasArg(F("GB"));
     gammaCorrectCol = request->hasArg(F("GC"));
+    gammaCorrectPreview = request->hasArg(F("GCP"));  // WLEDMM
     gammaCorrectVal = request->arg(F("GV")).toFloat();
     if (gammaCorrectVal > 1.0f && gammaCorrectVal <= 3)
       calcGammaTable(gammaCorrectVal);
@@ -250,6 +262,7 @@ void handleSettingsSet(AsyncWebServerRequest *request, byte subPage)
       gammaCorrectVal = 1.0f; // no gamma correction
       gammaCorrectBri = false;
       gammaCorrectCol = false;
+      gammaCorrectPreview = false; // WLEDMM
     }
 
     fadeTransition = request->hasArg(F("TF"));
@@ -347,9 +360,11 @@ void handleSettingsSet(AsyncWebServerRequest *request, byte subPage)
     if (t >= -255  && t <= 255) arlsOffset = t;
 
 #ifdef WLED_ENABLE_DMX_INPUT
-    dmxTransmitPin = request->arg(F("DMT")).toInt();
-    dmxReceivePin = request->arg(F("DMR")).toInt();
-    dmxEnablePin= request->arg(F("DME")).toInt();
+    dmxInputTransmitPin = request->arg(F("IDMT")).toInt();
+    dmxInputReceivePin = request->arg(F("IDMR")).toInt();
+    dmxInputEnablePin = request->arg(F("IDME")).toInt();
+    dmxInputPort = request->arg(F("IDMP")).toInt();
+    if(dmxInputPort <= 0 || dmxInputPort > 2) dmxInputPort = 2;
 #endif
 
     alexaEnabled = request->hasArg(F("AL"));
@@ -416,7 +431,7 @@ void handleSettingsSet(AsyncWebServerRequest *request, byte subPage)
 
     //start ntp if not already connected
     if (ntpEnabled && WLED_CONNECTED && !ntpConnected) ntpConnected = ntpUdp.begin(ntpLocalPort);
-    ntpLastSyncTime = 0; // force new NTP query
+    ntpLastSyncTime = NTP_NEVER; // force new NTP query
 
     longitude = request->arg(F("LN")).toFloat();
     latitude = request->arg(F("LT")).toFloat();
@@ -599,7 +614,7 @@ void handleSettingsSet(AsyncWebServerRequest *request, byte subPage)
       i2c_scl = hw_scl_pin;
       DEBUG_PRINTF("handleSettingsSet(): reserved I2C pins SDA=%d SCL=%d.\n", i2c_sda, i2c_scl);
       #ifdef ESP32
-      Wire.setPins(i2c_sda, i2c_scl); // this will fail if Wire is initilised (Wire.begin() called)
+      Wire.setPins(i2c_sda, i2c_scl); // this will fail if Wire is initialised (Wire.begin() called)
       #endif
       // Wire.begin(); // WLEDMM moved into pinManager
     } else {
@@ -700,10 +715,10 @@ void handleSettingsSet(AsyncWebServerRequest *request, byte subPage)
         DEBUG_PRINTLN(value);
       } else {
         // we are using a hidden field with the same name as our parameter (!before the actual parameter!)
-        // to describe the type of parameter (text,float,int), for boolean patameters the first field contains "off"
+        // to describe the type of parameter (text,float,int), for boolean parameters the first field contains "off"
         // so checkboxes have one or two fields (first is always "false", existence of second depends on checkmark and may be "true")
         if (subObj[name].isNull()) {
-          // the first occurence of the field describes the parameter type (used in next loop)
+          // the first occurrence of the field describes the parameter type (used in next loop)
           if (value == "false") subObj[name] = false; // checkboxes may have only one field
           else                  subObj[name] = value;
         } else {
@@ -909,6 +924,9 @@ bool handleSet(AsyncWebServerRequest *request, const String& req, bool apply)
     applyPreset(presetCycCurr);
   }
 
+  pos = req.indexOf(F("NP")); //advances to next preset in a playlist
+  if (pos > 0) doAdvancePlaylist = true;
+  
   //set brightness
   updateVal(req.c_str(), "&A=", &bri);
 

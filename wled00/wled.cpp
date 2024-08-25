@@ -2,6 +2,10 @@
 #include "wled.h"
 #include "wled_ethernet.h"
 #include <Arduino.h>
+#ifdef ARDUINO_ARCH_ESP32
+#include "esp_ota_ops.h"
+#endif
+#warning WLED-MM GPL-v3. By installing WLED MM you implicitly accept the terms!
 
 #if defined(ARDUINO_ARCH_ESP32) && defined(WLED_DISABLE_BROWNOUT_DET)
 #include "soc/soc.h"
@@ -62,6 +66,22 @@
 // WLEDMM end
 
 
+#if INCLUDE_xTaskGetHandle && defined(ARDUINO_ARCH_ESP32) && (defined(WLED_DEBUG) || defined(WLED_DEBUG_HEAP))
+// WLEDMM stack debug tool - find async_tcp task, and queries it's free stack
+static int wledmm_get_tcp_stacksize(void) {
+  static TaskHandle_t tcp_taskHandle = NULL;                   // to store the task handle for later calls
+  char * tcp_taskname = pcTaskGetTaskName(tcp_taskHandle);     // ask for name of the known task (to make sure we are still looking at the right one)
+
+  if ((tcp_taskHandle == NULL) || (tcp_taskname == NULL) || (strncmp(tcp_taskname, "async_tcp", 9) != 0)) {
+    tcp_taskHandle = xTaskGetHandle("async_tcp");              // need to look for the task by name. FreeRTOS docs say this is very slow, so we store the result for next time
+    //DEBUG_PRINT(F("async_tcp task ")); DEBUG_PRINTLN( (tcp_taskHandle != NULL) ? F("found") : F("not found"));
+  }
+
+  if (tcp_taskHandle != NULL) return uxTaskGetStackHighWaterMark(tcp_taskHandle); // got it !!
+  else return -1;
+}
+#endif
+
 /*
  * Main WLED class implementation. Mostly initialization and connection logic
  */
@@ -105,7 +125,11 @@ void WLED::loop()
   handleIR();        // 2nd call to function needed for ESP32 to return valid results -- should be good for ESP8266, too
   #endif
   handleConnection();
+  #ifndef WLED_DISABLE_ESPNOW
+  handleRemote();
+  #endif
   handleSerial();
+  handleImprovWifiScan();
 
   #if defined(ARDUINO_ARCH_ESP32) && defined(WLEDMM_PROTECT_SERVICE)  // WLEDMM experimental: handleNotifications() calls strip.show(); handleTransitions modifies segments
   if (!suspendStripService) {
@@ -117,10 +141,10 @@ void WLED::loop()
   #endif
 
 #ifdef WLED_ENABLE_DMX
-  handleDMX();
+  handleDMXOutput();
 #endif
 #ifdef WLED_ENABLE_DMX_INPUT
-  handleDMXInput();
+  dmxInput.update();
 #endif
   userLoop();
 
@@ -157,7 +181,11 @@ void WLED::loop()
   }
   #endif
 
-  if (doSerializeConfig) serializeConfig();
+  if (doSerializeConfig)
+  {   
+    serializeConfig();
+  } 
+    
 
   if (doReboot && !doInitBusses) // if busses have to be inited & saved, wait until next iteration
     reset();
@@ -190,7 +218,7 @@ void WLED::loop()
     #endif
     if (!offMode || strip.isOffRefreshRequired()) {
 #if defined(ARDUINO_ARCH_ESP32) && defined(WLEDMM_PROTECT_SERVICE)  // WLEDMM experimental 
-      static unsigned long lastTimeService = 0; // WLEMM needed to remove stale lock
+      static unsigned long lastTimeService = 0; // WLEDMM needed to remove stale lock
       if (!suspendStripService && !doInitBusses && !loadLedmap) { // WLEDMM prevent effect drawing while strip or segments are being updated
 #endif
         strip.service();
@@ -199,6 +227,7 @@ void WLED::loop()
       } else {
         if (suspendStripService && (millis() - lastTimeService > 1500)) { // WLEDMM remove stale lock after 1.5 seconds
           USER_PRINTLN("--> looptask: stale suspendStripService lock removed after 1500 ms."); // should not happen - check for missing "suspendStripService = false"
+          suspendStripService = false;
         }
       }
 #endif
@@ -226,7 +255,7 @@ void WLED::loop()
   if (lastMqttReconnectAttempt > millis()) {
     rolloverMillis++;
     lastMqttReconnectAttempt = 0;
-    ntpLastSyncTime = 0;
+    ntpLastSyncTime = NTP_NEVER;  // force new NTP query
     strip.restartRuntime();
   }
   if (millis() - lastMqttReconnectAttempt > 30000 || lastMqttReconnectAttempt == 0) { // lastMqttReconnectAttempt==0 forces immediate broadcast
@@ -341,6 +370,10 @@ void WLED::loop()
   if (millis() - debugTime > 4999 ) { // WLEDMM: Special case for debugging heap faster
     DEBUG_PRINT(F("*** Free heap: "));     DEBUG_PRINT(heap_caps_get_free_size(0x1800));
     DEBUG_PRINT(F("\tLargest free block: "));     DEBUG_PRINT(heap_caps_get_largest_free_block(0x1800));
+    DEBUG_PRINT(F(" *** \t\tArduino min free stack: ")); DEBUG_PRINT(uxTaskGetStackHighWaterMark(NULL));
+#if INCLUDE_xTaskGetHandle
+    DEBUG_PRINT(F("   TCP min free stack: ")); DEBUG_PRINT(wledmm_get_tcp_stacksize());
+#endif
     DEBUG_PRINTLN(F(" ***"));    
     debugTime = millis();
   }
@@ -356,6 +389,23 @@ void WLED::loop()
     ESP.wdtFeed();
   #endif
 #endif
+
+#if 0 && defined(ALL_JSON_TO_PSRAM) && defined(WLED_USE_PSRAM_JSON)
+// WLEDMM experiment - JSON garbagecollect once per minute. Warning: may crash at random
+  static unsigned long last_gc_time = 0;
+  // try once in 60 seconds
+  if ((millis() - last_gc_time) > 60000) {
+    // look for a perfect moment -> make sure no strip or segments or presets activity, no configs being updated, no realtime external control
+    if (!suspendStripService && !doInitBusses && !doReboot && !doCloseFile && !realtimeMode && !loadLedmap && !presetsActionPending()) {
+      // make sure JSON buffer is not in use
+      if ( (doSerializeConfig == false) && (jsonBufferLock == 0) && (fileDoc == nullptr)) {
+        USER_PRINTLN(F("JSON gabage collection (regular)."));
+        doc.garbageCollect();                   // WLEDMM experimental - trigger garbage collection on JSON doc memory pool.
+                                                // this will make any pending reference to JSON objects _invalid_
+        last_gc_time = millis();
+  } } }
+#endif
+
 }
 
 #if defined(ARDUINO_ARCH_ESP32) && defined(WLEDMM_FASTPATH)
@@ -400,6 +450,9 @@ void WLED::setup()
   #ifdef ARDUINO_ARCH_ESP32
   pinMode(hardwareRX, INPUT_PULLDOWN); delay(1);        // suppress noise in case RX pin is floating (at low noise energy) - see issue #3128
   #endif
+  #ifdef WLED_BOOTUPDELAY
+  delay(WLED_BOOTUPDELAY); // delay to let voltage stabilize, helps with boot issues on some setups
+  #endif
   Serial.begin(115200);
   if (!Serial) delay(1000); // WLEDMM make sure that Serial has initalized
 
@@ -408,6 +461,10 @@ void WLED::setup()
   if (!Serial) delay(2500);  // WLEDMM allow CDC USB serial to initialise
   #endif
   #if ARDUINO_USB_CDC_ON_BOOT || ARDUINO_USB_MODE
+    #if ARDUINO_USB_CDC_ON_BOOT && (defined(CONFIG_IDF_TARGET_ESP32S3) || defined(CONFIG_IDF_TARGET_ESP32C3) || defined(CONFIG_IDF_TARGET_ESP32C6))
+    //  WLEDMM avoid "hung devices" when USB_CDC is enabled; see https://github.com/espressif/arduino-esp32/issues/9043
+    Serial.setTxTimeoutMs(0);    // potential side-effect: incomplete debug output, with missing characters whenever TX buffer is full.
+    #endif
   if (!Serial) delay(2500);  // WLEDMM: always allow CDC USB serial to initialise
   if (Serial) Serial.println("wait 1");  // waiting a bit longer ensures that a  debug messages are shown in serial monitor
   if (!Serial) delay(2500);
@@ -430,8 +487,8 @@ void WLED::setup()
   #endif
 
   //Serial0.setDebugOutput(false);
-  #ifdef WLED_DEBUG
-  Serial.setDebugOutput(true);
+  #if CORE_DEBUG_LEVEL || defined(WLED_DEBUG_HEAP) || defined(WLED_DEBUG)
+  Serial.setDebugOutput(true);  // enables kernel debug messages on Serial
   #endif
   USER_FLUSH(); delay(100);
   USER_PRINTLN();
@@ -446,7 +503,10 @@ void WLED::setup()
   #ifdef WLED_RELEASE_NAME
   USER_PRINTF(" WLEDMM_%s %s, build %s.\n", versionString, releaseString, TOSTRING(VERSION)); // WLEDMM specific
   #endif
-
+  #ifdef ARDUINO_ARCH_ESP32
+  const esp_partition_t *running_partition = esp_ota_get_running_partition();
+  USER_PRINTF("Running from: %s which is %u bytes and type %u subtype %u at address %x\n",running_partition->label,running_partition->size,running_partition->type,running_partition->subtype,running_partition->address);
+  #endif
 #ifdef ARDUINO_ARCH_ESP32
   DEBUG_PRINT(F("esp32 "));
   DEBUG_PRINTLN(ESP.getSdkVersion());
@@ -525,8 +585,8 @@ void WLED::setup()
 #endif
   DEBUG_PRINT(F("heap ")); DEBUG_PRINTLN(ESP.getFreeHeap());
 #ifdef ARDUINO_ARCH_ESP32
-  #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(4, 4, 0)  // unfortunately not availeable in older framework versions
-  USER_PRINT(F("\nArduino  max stack  ")); USER_PRINTLN(getArduinoLoopTaskStackSize());
+  #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(4, 4, 0)  // unfortunately not available in older framework versions
+  DEBUG_PRINT(F("\nArduino  max stack  ")); DEBUG_PRINTLN(getArduinoLoopTaskStackSize());
   #endif
   DEBUG_PRINTF("%s min free stack %d\n", pcTaskGetTaskName(NULL), uxTaskGetStackHighWaterMark(NULL)); //WLEDMM
 #endif
@@ -539,12 +599,12 @@ void WLED::setup()
   pinManager.allocateMultiplePins(pins, sizeof(pins)/sizeof(managed_pin_type), PinOwner::SPI_RAM);
   #elif defined(CONFIG_IDF_TARGET_ESP32S2)
   // S2: reserve GPIO 26-32 for PSRAM (may fail due to isPinOk() but that will also prevent other allocation)
-  managed_pin_type pins[] = { {26, true}, {27, true}, {28, true}, {29, true}, {30, true}, {31, true}, {32, true} };
-  pinManager.allocateMultiplePins(pins, sizeof(pins)/sizeof(managed_pin_type), PinOwner::SPI_RAM);
+  //managed_pin_type pins[] = { {26, true}, {27, true}, {28, true}, {29, true}, {30, true}, {31, true}, {32, true} };
+  //pinManager.allocateMultiplePins(pins, sizeof(pins)/sizeof(managed_pin_type), PinOwner::SPI_RAM);
   #elif defined(CONFIG_IDF_TARGET_ESP32C3)
   // C3: reserve GPIO 12-17 for PSRAM (may fail due to isPinOk() but that will also prevent other allocation)
-  managed_pin_type pins[] = { {12, true}, {13, true}, {14, true}, {15, true}, {16, true}, {17, true} };
-  pinManager.allocateMultiplePins(pins, sizeof(pins)/sizeof(managed_pin_type), PinOwner::SPI_RAM);
+  //managed_pin_type pins[] = { {12, true}, {13, true}, {14, true}, {15, true}, {16, true}, {17, true} };
+  //pinManager.allocateMultiplePins(pins, sizeof(pins)/sizeof(managed_pin_type), PinOwner::SPI_RAM);
   #else
   // GPIO16/GPIO17 reserved for SPI RAM
   managed_pin_type pins[] = { {16, true}, {17, true} };
@@ -559,20 +619,27 @@ void WLED::setup()
     DEBUG_PRINTLN(F("PSRAM not used."));
   #endif
 #endif
+#if defined(ARDUINO_ARCH_ESP32)
+  if (strncmp("ESP32-PICO", ESP.getChipModel(), 10) == 0) { // WLEDMM detect pico board at runtime
+    // special handling for PICO-D4: gpio16+17 are in use for onboard SPI FLASH (not PSRAM)
+    managed_pin_type pins[] = { {16, true}, {17, true} };
+    pinManager.allocateMultiplePins(pins, sizeof(pins)/sizeof(managed_pin_type), PinOwner::SPI_RAM);
+  }
+#endif
 
   //DEBUG_PRINT(F("LEDs inited. heap usage ~"));
   //DEBUG_PRINTLN(heapPreAlloc - ESP.getFreeHeap());
-  USER_FLUSH();  // WLEDMM flush buffer now, before anything time-critial is started.
+  USER_FLUSH();  // WLEDMM flush buffer now, before anything time-critical is started.
 
   pinManager.manageDebugTXPin();
 
 #ifdef WLED_ENABLE_DMX //reserve GPIO2 as hardcoded DMX pin
   pinManager.allocatePin(2, true, PinOwner::DMX);
 #endif
-#ifdef WLED_ENABLE_DMX_INPUT
-  if(dmxTransmitPin > 0) pinManager.allocatePin(dmxTransmitPin, true, PinOwner::DMX);
-  if(dmxReceivePin > 0) pinManager.allocatePin(dmxReceivePin, true, PinOwner::DMX);
-  if(dmxEnablePin > 0) pinManager.allocatePin(dmxEnablePin, true, PinOwner::DMX);
+
+#if defined(ALL_JSON_TO_PSRAM) && defined(WLED_USE_PSRAM_JSON)
+  USER_PRINTLN(F("JSON gabage collection (initial)."));
+  doc.garbageCollect();   // WLEDMM experimental - this seems to move the complete doc[] into PSRAM
 #endif
 
 // WLEDMM experimental: support for single neoPixel on Adafruit boards
@@ -604,7 +671,7 @@ void WLED::setup()
   for (uint8_t i=1; i<WLED_MAX_BUTTONS; i++) btnPin[i] = -1;
 
   bool fsinit = false;
-  USER_PRINTLN(F("Mount FS"));
+  USER_PRINTLN(F("Mounting FS ..."));
 #ifdef ARDUINO_ARCH_ESP32
   fsinit = WLED_FS.begin(true);
 #else
@@ -613,6 +680,8 @@ void WLED::setup()
   if (!fsinit) {
     USER_PRINTLN(F("Mount FS failed!"));  // WLEDMM
     errorFlag = ERR_FS_BEGIN;
+  } else {
+      USER_PRINTLN(F("Mount FS succeeded.")); // WLEDMM
   }
 #ifdef WLED_ADD_EEPROM_SUPPORT
   else deEEP();
@@ -621,7 +690,8 @@ void WLED::setup()
 #endif
   updateFSInfo();
 
-  USER_PRINTLN(F("done Mounting FS"));
+  USER_PRINT(F("done Mounting FS; "));
+  USER_PRINT(((fsBytesTotal-fsBytesUsed)/1024)); USER_PRINTLN(F(" kB free.\n"));
 
   // generate module IDs must be done before AP setup
   escapedMac = WiFi.macAddress();
@@ -645,7 +715,7 @@ void WLED::setup()
   beginStrip();
   DEBUG_PRINT(F("heap ")); DEBUG_PRINTLN(ESP.getFreeHeap());
 
-  USER_PRINTLN(F("Usermods setup ..."));
+  USER_PRINTLN(F("\nUsermods setup ..."));
   userSetup();
   usermods.setup();
   DEBUG_PRINT(F("heap ")); DEBUG_PRINTLN(ESP.getFreeHeap());
@@ -661,7 +731,7 @@ void WLED::setup()
   //Serial RX (Adalight, Improv, Serial JSON) only possible if GPIO3 unused
   //Serial TX (Debug, Improv, Serial JSON) only possible if GPIO1 unused
   if (!pinManager.isPinAllocated(hardwareRX) && !pinManager.isPinAllocated(hardwareTX)) {
-    if (Serial) Serial.println(F("Ada"));
+    if (Serial) Serial.println(F("\nAda"));
   }
   #endif
 
@@ -693,8 +763,11 @@ void WLED::setup()
       ArduinoOTA.setHostname(cmDNS);
   }
 #endif
-#if defined(WLED_ENABLE_DMX) || defined(WLED_ENABLE_DMX_INPUT)
-  initDMX();
+#ifdef WLED_ENABLE_DMX
+  initDMXOutput();
+#endif
+#ifdef WLED_ENABLE_DMX_INPUT
+  dmxInput.init(dmxInputReceivePin, dmxInputTransmitPin, dmxInputEnablePin, dmxInputPort);
 #endif
 
 #ifdef WLED_ENABLE_ADALIGHT
@@ -709,7 +782,20 @@ void WLED::setup()
   DEBUG_PRINT(pcTaskGetTaskName(NULL)); DEBUG_PRINT(F(" free stack ")); DEBUG_PRINTLN(uxTaskGetStackHighWaterMark(NULL));
   #endif
 
+  // Seed FastLED random functions with an esp random value, which already works properly at this point.
+#if defined(ARDUINO_ARCH_ESP32)
+  uint32_t seed32 = esp_random();
+  seed32 ^= random(0, INT32_MAX);  // WLEDMM some extra entropy (for older frameworks where esp_ramdom alone might be too predictable after startup)
+#elif defined(ARDUINO_ARCH_ESP8266)
+  const uint32_t seed32 = RANDOM_REG32;
+#else
+  const uint32_t seed32 = random(std::numeric_limits<long>::max());
+#endif
+  random16_set_seed((uint16_t)((seed32 & 0xFFFF) ^ (seed32 >> 16)));
+
+  #if WLED_WATCHDOG_TIMEOUT > 0
   enableWatchdog();
+  #endif
 
   #if defined(ARDUINO_ARCH_ESP32) && defined(WLED_DISABLE_BROWNOUT_DET)
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 1); //enable brownout detector
@@ -776,7 +862,7 @@ void WLED::setup()
   // repeat Ada prompt
   #ifdef WLED_ENABLE_ADALIGHT
   if (!pinManager.isPinAllocated(hardwareRX) && !pinManager.isPinAllocated(hardwareTX)) {
-    if (Serial) Serial.println(F("Ada"));
+    if (Serial) Serial.println(F("\nAda"));
   }
   #endif
 
@@ -823,8 +909,8 @@ void WLED::initAP(bool resetAP)
   USER_PRINT(F("Opening access point "));  // WLEDMM
   USER_PRINTLN(apSSID);                    // WLEDMM
   WiFi.softAPConfig(IPAddress(4, 3, 2, 1), IPAddress(4, 3, 2, 1), IPAddress(255, 255, 255, 0));
-  WiFi.softAP(apSSID, apPass, apChannel, apHide);
-  #if defined(LOLIN_WIFI_FIX) && (defined(ARDUINO_ARCH_ESP32C3) || defined(ARDUINO_ARCH_ESP32S2))
+  WiFi.softAP(apSSID, apPass, apChannel, apHide, 8); // WLED-MM allow up to 8 clients for ad-hoc "in the field" syncing.
+  #if defined(LOLIN_WIFI_FIX) && (defined(ARDUINO_ARCH_ESP32C3) || defined(ARDUINO_ARCH_ESP32S2) || defined(ARDUINO_ARCH_ESP32S3))
   WiFi.setTxPower(WIFI_POWER_8_5dBm);
   #endif
 
@@ -955,14 +1041,19 @@ bool WLED::initEthernet()
 
 void WLED::initConnection()
 {
+#ifdef ARDUINO_ARCH_ESP32
+  unsigned long t_wait = millis();
+  while(strip.isUpdating() && (millis() - t_wait < 86)) delay(1); // WLEDMM try to catch a moment when strip is idle
+  //if (strip.isUpdating()) USER_PRINTLN("WLED::initConnection: strip still updating.");
+#endif
+
   #ifdef WLED_ENABLE_WEBSOCKETS
   ws.onEvent(wsEvent);
   #endif
 
-
   WiFi.disconnect(true);        // close old connections
 #ifdef ESP8266
-  WiFi.setPhyMode(WIFI_PHY_MODE_11N);
+  WiFi.setPhyMode(force802_3g ? WIFI_PHY_MODE_11G : WIFI_PHY_MODE_11N);
 #endif
 
   if (staticIP[0] != 0 && staticGateway[0] != 0) {
@@ -1007,7 +1098,7 @@ void WLED::initConnection()
 
   WiFi.begin(clientSSID, clientPass);
 #ifdef ARDUINO_ARCH_ESP32
-  #if defined(LOLIN_WIFI_FIX) && (defined(ARDUINO_ARCH_ESP32C3) || defined(ARDUINO_ARCH_ESP32S2))
+  #if defined(LOLIN_WIFI_FIX) && (defined(ARDUINO_ARCH_ESP32C3) || defined(ARDUINO_ARCH_ESP32S2) || defined(ARDUINO_ARCH_ESP32S3))
   WiFi.setTxPower(WIFI_POWER_8_5dBm);
   #endif
   WiFi.setSleep(!noWifiSleep);
@@ -1029,6 +1120,8 @@ void WLED::initInterfaces()
     hueIP[2] = ipAddress[2];
   }
 #endif
+
+// aOtaEnabled=false; strcpy(cmDNS, ""); // WLEDMM use this to disable OTA and mDNS
 
 //WLEDMM: add netdebug variables
 #ifdef WLED_DEBUG_HOST
@@ -1128,25 +1221,38 @@ void WLED::handleConnection()
     return;
   }
 
+  static unsigned retryCount = 0;  // WLEDMM
   #ifdef ARDUINO_ARCH_ESP32 
   // reconnect WiFi to clear stale allocations if heap gets too low
-  if (now - heapTime > 5000) { // WLEDMM: updated with better logic for small heap available by block, not total.
-    // uint32_t heap = ESP.getFreeHeap();
+  if ((!strip.isUpdating()) && (now - heapTime > 5000)) { // WLEDMM: updated with better logic for small heap available by block, not total. // WLEDMM trying to use a moment when the strip is idle
+#if defined(ARDUINO_ARCH_ESP32S2) || defined(WLED_ENABLE_HUB75MATRIX)
+    uint32_t heap = ESP.getFreeHeap(); // WLEDMM works better on -S2
+#else
     uint32_t heap = heap_caps_get_largest_free_block(0x1800); // WLEDMM: This is a better metric for free heap.
+#endif
     if (heap < MIN_HEAP_SIZE && lastHeap < MIN_HEAP_SIZE) {
-      DEBUG_PRINT(F("Heap too low! (step 2, force reconnect): "));
-      DEBUG_PRINTLN(heap);
-      forceReconnect = true;
-      strip.purgeSegments(true); // remove all but one segments from memory
+      if (retryCount < 5) {  // WLEDMM avoid repeated disconnects
+        USER_PRINT(F("Heap too low! (step 2, force reconnect): "));
+        USER_PRINTLN(heap);
+        forceReconnect = true;
+        strip.purgeSegments(true); // remove all but one segments from memory
+        // WLEDMM
+        errorFlag = ERR_LOW_MEM;
+        retryCount ++;
+      }
+      errorFlag = ERR_LOW_MEM;
     } else if (heap < MIN_HEAP_SIZE) {
-      DEBUG_PRINT(F("Heap too low! (step 1, flush unread UDP): "));
-      DEBUG_PRINTLN(heap);      
+      USER_PRINT(F("Heap too low! (step 1, flush unread UDP): "));
+      USER_PRINTLN(heap);      
       strip.purgeSegments();
       notifierUdp.flush();
       rgbUdp.flush();
       notifier2Udp.flush();
       ntpUdp.flush();
-    }
+      // WLEDMM
+      errorFlag = ERR_LOW_MEM;
+      retryCount = 1;
+    } else retryCount = 0;  // WLEDMM memory OK - reset counter
     lastHeap = heap;
     heapTime = now;
   }
@@ -1155,13 +1261,23 @@ void WLED::handleConnection()
   if (now - heapTime > 5000) {
     uint32_t heap = ESP.getFreeHeap();
     if (heap < MIN_HEAP_SIZE && lastHeap < MIN_HEAP_SIZE) {
-      DEBUG_PRINT(F("Heap too low! "));
-      DEBUG_PRINTLN(heap);
-      forceReconnect = true;
-      strip.purgeSegments(true); // remove all but one segments from memory
+      if (retryCount < 5) {  // WLEDMM avoid repeated disconnects
+        USER_PRINT(F("Heap too low! (step 2, force reconnect): "));
+        USER_PRINTLN(heap);
+        forceReconnect = true;
+        strip.purgeSegments(true); // remove all but one segments from memory
+        // WLEDMM
+        errorFlag = ERR_LOW_MEM;
+        retryCount ++;
+      }
     } else if (heap < MIN_HEAP_SIZE) {
+      USER_PRINT(F("Heap too low! (step 1, purge segments): "));
+      USER_PRINTLN(heap);      
       strip.purgeSegments();
-    }
+      // WLEDMM
+      errorFlag = ERR_LOW_MEM;
+      retryCount = 1;
+    } else retryCount = 0;  // WLEDMM memory OK - reset counter
     lastHeap = heap;
     heapTime = now;
   }
@@ -1223,7 +1339,7 @@ void WLED::handleConnection()
     if (improvActive) {
       if (improvError == 3) sendImprovStateResponse(0x00, true);
       sendImprovStateResponse(0x04);
-      if (improvActive > 1) sendImprovRPCResponse(0x01);
+      if (improvActive > 1) sendImprovIPRPCResult(ImprovRPCType::Command_Wifi);
     }
     initInterfaces();
     userConnected();
@@ -1268,7 +1384,15 @@ void WLED::handleStatusLED()
   if (ledStatusType) {
     if (millis() - ledStatusLastMillis >= (1000/ledStatusType)) {
       ledStatusLastMillis = millis();
-      ledStatusState = !ledStatusState;
+#if 0
+      // WLEDMM un-comment this to stop the blinking
+      if ((ledStatusType != 2) && (ledStatusType != 4))
+        ledStatusState = !ledStatusState;
+      else
+        ledStatusState = HIGH;
+#else
+        ledStatusState = !ledStatusState;
+#endif
       #if STATUSLED>=0
       digitalWrite(STATUSLED, ledStatusState);
       #else

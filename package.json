@@ -1,6 +1,6 @@
 {
   "name": "wled",
-  "version": "0.14.0-b25.29",
+  "version": "0.14.1-b32.41",
   "description": "Tools for WLED project",
   "main": "tools/cdata.js",
   "directories": {
@@ -16,7 +16,7 @@
     "url": "git+https://github.com/MoonModules/WLED.git"
   },
   "author": "",
-  "license": "ISC",
+  "license": "GPL-3.0-or-later",
   "bugs": {
     "url": "https://github.com/MoonModules/WLED/issues"
   },

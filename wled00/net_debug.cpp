@@ -1,6 +1,6 @@
 #include "wled.h"
 
-#ifdef WLED_DEBUG_HOST //WLEDMM: this looks unnecesarry as .h is not included anyway if no netdebug
+#ifdef WLED_DEBUG_HOST //WLEDMM: this looks unnecessary as .h is not included anyway if no netdebug
 
 size_t NetworkDebugPrinter::write(uint8_t c) {
   if (!WLED_CONNECTED || !netDebugEnabled) return 0;
@@ -26,4 +26,6 @@ size_t NetworkDebugPrinter::write(const uint8_t *buf, size_t size) {
 
 NetworkDebugPrinter NetDebug;
 
+#else
+#pragma message "Net debug disabled"
 #endif
