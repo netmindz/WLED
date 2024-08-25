@@ -3,7 +3,7 @@
 #include "wled.h"
 //========================================================================================================================
 
-static const char _data_FX_mode_Rings[] PROGMEM = "Rings - Rings@Speed,Jump,,,,Inward;;!,!;1;";
+static const char _data_FX_mode_Rings[] PROGMEM = "Rings - Rings@Speed,Jump,,,,Inward;;!,!;1;pal=54";
 // static const char _data_FX_mode_SimpleRings[] PROGMEM = "Rings - Simple@Speed,Jump,,,,;;!,!;1;";
 static const char _data_FX_mode_RandomFlow[] PROGMEM = "Rings - Random Flow@Speed;!;;1";
 static const char _data_FX_mode_AudioRings[] PROGMEM = "Rings - AudioRings@Speed,,,,,Fade,Inward;;!;1f;pal=11,sx=255";
