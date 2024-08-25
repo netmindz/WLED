@@ -6,7 +6,7 @@
 static const char _data_FX_mode_Rings[] PROGMEM = "Rings - Rings@Speed,Jump,,,,Inward;;!,!;1;pal=54";
 // static const char _data_FX_mode_SimpleRings[] PROGMEM = "Rings - Simple@Speed,Jump,,,,;;!,!;1;";
 static const char _data_FX_mode_RandomFlow[] PROGMEM = "Rings - Random Flow@Speed;!;;1";
-static const char _data_FX_mode_AudioRings[] PROGMEM = "Rings - AudioRings@Speed,,,,,Fade,Inward;;!;1f;pal=11,sx=255";
+static const char _data_FX_mode_AudioRings[] PROGMEM = "Rings - AudioRings@Speed,Brightness,,,,Blend,Inward;;!,!;1f;pal=11,sx=255,ix=125";
 
 #define ringCount 9 // total Number of Rings
 #define RINGS 9
@@ -32,7 +32,7 @@ void setRing(int ring, CRGB colour) {
   }
 }
 
-void setRingFromFtt(int index, int ring) {
+void setRingFromFtt(int index, int ring, int pbri = 255) {
   um_data_t *um_data;
   if (!usermods.getUMData(&um_data, USERMOD_ID_AUDIOREACTIVE)) {
     // add support for no audio
@@ -42,7 +42,8 @@ void setRingFromFtt(int index, int ring) {
 
   uint8_t val = fftResult[map(index, 0, 6, 0, NUM_GEQ_CHANNELS)];
   // Visualize leds to the beat
-  CRGB color =  SEGMENT.color_from_palette(val, false, false, 0);
+
+  CRGB color =  SEGMENT.color_from_palette(val, false, false, 0, map(val, 0, 255, 0, pbri));
   color.nscale8_video(val);
   setRing(ring, color);
 }
@@ -139,15 +140,15 @@ uint16_t mode_AudioRings() {
       }
   
       // Visualize leds to the beat
-      CRGB color = SEGMENT.color_from_palette(val, false, false, 0, val);
+      CRGB color = SEGMENT.color_from_palette(val, false, false, 0, map(val, 0, 255, 1, SEGMENT.intensity));
 //      CRGB color = ColorFromPalette(currentPalette, val, 255, currentBlending);
     if(SEGMENT.check1) color.nscale8_video(val);
       setRing(i, color);
 //        setRingFromFtt((i * 2), i); 
     }
 
-    setRingFromFtt(2, 7); // set outer ring to base
-    setRingFromFtt(0, 8); // set outer ring to base
+    setRingFromFtt(2, 7, SEGMENT.intensity); // set outer ring to base
+    setRingFromFtt(0, 8, SEGMENT.intensity); // set outer ring to base
 
   }
   return 0;
