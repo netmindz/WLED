@@ -3,11 +3,10 @@
 #include "wled.h"
 //========================================================================================================================
 
-
-static const char _data_FX_mode_Rings[] PROGMEM = "Rings - Rings@Jump,Inward;;!;1";
-static const char _data_FX_mode_SimpleRings[] PROGMEM = "Rings - Simple@Jump;;!;1";
-static const char _data_FX_mode_RandomFlow[] PROGMEM = "Rings - Random Flow@;;!;1";
-static const char _data_FX_mode_AudioRings[] PROGMEM = "Rings - AudioRings@Inward;;!;1";
+static const char _data_FX_mode_Rings[] PROGMEM = "Rings - Rings@Speed,Jump,,,,Inward;;!,!;1;";
+static const char _data_FX_mode_SimpleRings[] PROGMEM = "Rings - Simple@Speed,Jump,,,,Inward;;!,!;1;";
+static const char _data_FX_mode_RandomFlow[] PROGMEM = "Rings - Random Flow@Speed;!;;1";
+static const char _data_FX_mode_AudioRings[] PROGMEM = "Rings - AudioRings@Speed,,,,,Fade,Inward;;!;1f;pal=11,sx=255";
 
 #define ringCount 9 // total Number of Rings
 #define RINGS 9
@@ -51,8 +50,8 @@ void setRingFromFtt(int index, int ring) {
 
 uint16_t mode_Rings() {
   
-  int JUMP = map(SEGMENT.custom1, 0, 255, 1, 16); // TODO: set range
-  bool INWARD = (SEGMENT.custom2 > 125) ? true  : false;
+  int JUMP = map(SEGMENT.intensity, 0, 255, 1,50); // TODO: set range
+  bool INWARD = SEGMENT.check1;
 
   static uint8_t hue[RINGS];
 
@@ -65,7 +64,7 @@ uint16_t mode_Rings() {
   for (int r = 0; r < RINGS; r++) {
     setRing(r, SEGMENT.color_from_palette(hue[r], false, false, 0));
   }
-//   FastLED.delay(SPEED);
+  delay(map(SEGMENT.speed, 0, 255, 200, 0)); // FIX
   if (INWARD) {
     for (int r = 0; r < RINGS; r++) {
       hue[(r - 1)] = hue[r]; // set ring one less to that of the outer
@@ -82,13 +81,14 @@ uint16_t mode_Rings() {
 }
 
 uint16_t mode_SimpleRings() {
-  int JUMP = map(SEGMENT.custom1, 0, 255, 1, 16); // TODO: set range
+  int JUMP = map(SEGMENT.intensity, 0, 255, 1,50); // TODO: set range
   static uint8_t j;
   for (int r = 0; r < RINGS; r++) {
     setRing(r, SEGMENT.color_from_palette(j + (r * JUMP), false, false, 0));
   }
   j += JUMP;
 //   FastLED.delay(SPEED);
+  delay(map(SEGMENT.speed, 0, 255, 200, 0)); // FIX
   return FRAMETIME_FIXED_SLOW; // TODO
 }
 
@@ -100,17 +100,18 @@ uint16_t mode_RandomFlow() {
     setRing(r, CHSV(hue[r], 255, 255));
   }
   for (int r = (RINGS - 1); r >= 1; r--) {
-    hue[r] = hue[(r - 1)]; // set this ruing based on the inner
+    hue[r] = hue[(r - 1)]; // set this ring based on the inner
   }
-//   FastLED.delay(SPEED);
+  delay(map(SEGMENT.speed, 0, 255, 200, 0)); // FIX
   return FRAMETIME_FIXED_SLOW; // TODO
 }
 
 
 uint16_t mode_AudioRings() {
 
-  bool newReading = false; // TODO
-  bool INWARD = (SEGMENT.custom1 > 125) ? true  : false;
+  bool newReading = false; // TODO  return FRAMETIME_FIXED_SLOW; // TODO
+
+  bool INWARD = SEGMENT.check2;
 
   uint8_t secondHand = micros()/(256-SEGMENT.speed)/500+1 % 64;
   if((SEGMENT.speed > 254) || (SEGENV.aux0 != secondHand)) {   // WLEDMM allow run run at full speed
@@ -140,7 +141,7 @@ uint16_t mode_AudioRings() {
       // Visualize leds to the beat
       CRGB color = SEGMENT.color_from_palette(val, false, false, 0, val);
 //      CRGB color = ColorFromPalette(currentPalette, val, 255, currentBlending);
-//      color.nscale8_video(val);
+    if(SEGMENT.check1) color.nscale8_video(val);
       setRing(i, color);
 //        setRingFromFtt((i * 2), i); 
     }
@@ -149,7 +150,7 @@ uint16_t mode_AudioRings() {
     setRingFromFtt(0, 8); // set outer ring to base
 
   }
-  return FRAMETIME;
+  return 0;
 }
 
 
