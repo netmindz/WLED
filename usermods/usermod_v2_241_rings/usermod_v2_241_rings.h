@@ -4,7 +4,7 @@
 //========================================================================================================================
 
 static const char _data_FX_mode_Rings[] PROGMEM = "Rings - Rings@Speed,Jump,,,,Inward;;!,!;1;";
-static const char _data_FX_mode_SimpleRings[] PROGMEM = "Rings - Simple@Speed,Jump,,,,Inward;;!,!;1;";
+// static const char _data_FX_mode_SimpleRings[] PROGMEM = "Rings - Simple@Speed,Jump,,,,;;!,!;1;";
 static const char _data_FX_mode_RandomFlow[] PROGMEM = "Rings - Random Flow@Speed;!;;1";
 static const char _data_FX_mode_AudioRings[] PROGMEM = "Rings - AudioRings@Speed,,,,,Fade,Inward;;!;1f;pal=11,sx=255";
 
@@ -80,17 +80,17 @@ uint16_t mode_Rings() {
   return FRAMETIME; // TODO
 }
 
-uint16_t mode_SimpleRings() {
-  int JUMP = map(SEGMENT.intensity, 0, 255, 1,50); // TODO: set range
-  static uint8_t j;
-  for (int r = 0; r < RINGS; r++) {
-    setRing(r, SEGMENT.color_from_palette(j + (r * JUMP), false, false, 0));
-  }
-  j += JUMP;
-//   FastLED.delay(SPEED);
-  delay(map(SEGMENT.speed, 0, 255, 200, 0)); // FIX
-  return FRAMETIME_FIXED_SLOW; // TODO
-}
+// uint16_t mode_SimpleRings() {
+//   int JUMP = map(SEGMENT.intensity, 0, 255, 1,50); // TODO: set range
+//   static uint8_t j;
+//   for (int r = 0; r < RINGS; r++) {
+//     setRing(r, SEGMENT.color_from_palette(j + (r * JUMP), false, false, 0));
+//   }
+//   j += JUMP;
+// //   FastLED.delay(SPEED);
+//   delay(map(SEGMENT.speed, 0, 255, 200, 0)); // FIX
+//   return FRAMETIME_FIXED_SLOW; // TODO
+// }
 
 
 uint16_t mode_RandomFlow() {
@@ -166,7 +166,7 @@ class Rings241Usermod : public Usermod {
 		if(!enabled) return;
 
 		strip.addEffect(250, &mode_Rings, _data_FX_mode_Rings);
-		strip.addEffect(251, &mode_SimpleRings, _data_FX_mode_SimpleRings);
+		// strip.addEffect(251, &mode_SimpleRings, _data_FX_mode_SimpleRings);
 		strip.addEffect(252, &mode_RandomFlow, _data_FX_mode_RandomFlow);
 		strip.addEffect(253, &mode_AudioRings, _data_FX_mode_AudioRings);
 
