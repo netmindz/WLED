@@ -203,16 +203,13 @@
 #ifdef USERMOD_ANIMARTRIX
 #include "../usermods/usermod_v2_animartrix/usermod_v2_animartrix.h"
 #endif
-<<<<<<< HEAD
 #ifdef USERMOD_241RINGS
 #include "../usermods/usermod_v2_241_rings/usermod_v2_241_rings.h"
 #endif
-=======
 #ifdef USERMOD_AUTO_PLAYLIST
 #include "../usermods/usermod_v2_auto_playlist/usermod_v2_auto_playlist.h"
 #endif
 
->>>>>>> mdev
 void registerUsermods()
 {
   /*
