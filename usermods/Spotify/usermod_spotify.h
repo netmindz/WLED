@@ -1,11 +1,107 @@
 #pragma once
 
 #include "wled.h"
+
 #include <SpotifyArduino.h>
+#include <SpotifyArduinoCert.h>
+
+#include <WiFiClientSecure.h>
+
 
 /*
 Fetch now playing data from Spotify
 */
+WiFiClientSecure client;
+SpotifyArduino spotify(client, "", "", "");
+
+void printCurrentlyPlayingToSerial(CurrentlyPlaying currentlyPlaying)
+{
+    // Use the details in this method or if you want to store them
+    // make sure you copy them (using something like strncpy)
+    // const char* artist =
+
+    Serial.println("--------- Currently Playing ---------");
+
+    Serial.print("Is Playing: ");
+    if (currentlyPlaying.isPlaying)
+    {
+        Serial.println("Yes");
+    }
+    else
+    {
+        Serial.println("No");
+    }
+
+    Serial.print("Track: ");
+    Serial.println(currentlyPlaying.trackName);
+    Serial.print("Track URI: ");
+    Serial.println(currentlyPlaying.trackUri);
+    Serial.println();
+
+    Serial.println("Artists: ");
+    for (int i = 0; i < currentlyPlaying.numArtists; i++)
+    {
+        Serial.print("Name: ");
+        Serial.println(currentlyPlaying.artists[i].artistName);
+        Serial.print("Artist URI: ");
+        Serial.println(currentlyPlaying.artists[i].artistUri);
+        Serial.println();
+    }
+
+    Serial.print("Album: ");
+    Serial.println(currentlyPlaying.albumName);
+    Serial.print("Album URI: ");
+    Serial.println(currentlyPlaying.albumUri);
+    Serial.println();
+
+    if (currentlyPlaying.contextUri != NULL)
+    {
+        Serial.print("Context URI: ");
+        Serial.println(currentlyPlaying.contextUri);
+        Serial.println();
+    }
+
+    long progress = currentlyPlaying.progressMs; // duration passed in the song
+    long duration = currentlyPlaying.durationMs; // Length of Song
+    Serial.print("Elapsed time of song (ms): ");
+    Serial.print(progress);
+    Serial.print(" of ");
+    Serial.println(duration);
+    Serial.println();
+
+    float percentage = ((float)progress / (float)duration) * 100;
+    int clampedPercentage = (int)percentage;
+    Serial.print("<");
+    for (int j = 0; j < 50; j++)
+    {
+        if (clampedPercentage >= (j * 2))
+        {
+            Serial.print("=");
+        }
+        else
+        {
+            Serial.print("-");
+        }
+    }
+    Serial.println(">");
+    Serial.println();
+
+    // will be in order of widest to narrowest
+    // currentlyPlaying.numImages is the number of images that
+    // are stored
+    for (int i = 0; i < currentlyPlaying.numImages; i++)
+    {
+        Serial.println("------------------------");
+        Serial.print("Album Image: ");
+        Serial.println(currentlyPlaying.albumImages[i].url);
+        Serial.print("Dimensions: ");
+        Serial.print(currentlyPlaying.albumImages[i].width);
+        Serial.print(" x ");
+        Serial.print(currentlyPlaying.albumImages[i].height);
+        Serial.println();
+    }
+    Serial.println("------------------------");
+}
 
 class SpotifyUsermod : public Usermod {
 
@@ -34,10 +130,8 @@ class SpotifyUsermod : public Usermod {
     const char *loginLinkTemplate = "<a href=\"https://accounts.spotify.com/authorize?client_id=%s&response_type=code&redirect_uri=%s&scope=%s\">Login</a>";
     const char *scope = "user-read-playback-state";
 
-    // WiFiClientSecure client;
-    // SpotifyArduino spotify(client, clientId.c_str(), clientSecret.c_str(), refreshToken.c_str());
 
-    unsigned long delayBetweenRequests = 60000; // Time between requests (1 minute)
+    unsigned long delayBetweenRequests = 10000; // Time between requests (1 minute)
     unsigned long requestDueTime;               //time when request due
 
 
@@ -63,7 +157,22 @@ class SpotifyUsermod : public Usermod {
      * Use it to initialize network interfaces
      */
     void connected() {
-      //Serial.println("Connected to WiFi!");
+      Serial.println("Connected to WiFi!");
+      client.setCACert(spotify_server_cert);
+      initDone = true;
+      const char *refreshToken = NULL;
+      String callbackURI = "http://" +  WiFi.localIP().toString() + "/settings/um?um=Spotify";
+      if(false) {
+      // if(strcmp(refreshToken.c_str(), "") == 0) {
+        Serial.println("Fetch refresh token");
+        refreshToken = spotify.requestAccessTokens("--", callbackURI.c_str());
+        spotify.setRefreshToken(refreshToken);
+      }
+
+      Serial.println("Refreshing Access Tokens");
+      if (!spotify.refreshAccessToken())      {
+          USER_PRINTLN("Failed to get access tokens");
+      }
     }
 
 
@@ -86,6 +195,29 @@ class SpotifyUsermod : public Usermod {
       if (millis() - lastTime > 1000) {
         //Serial.println("I'm alive!");
         lastTime = millis();
+        if (millis() > requestDueTime)
+        {
+          Serial.print("Free Heap: ");
+          Serial.println(ESP.getFreeHeap());
+
+          Serial.println("getting currently playing song:");
+          // Market can be excluded if you want e.g. spotify.getCurrentlyPlaying()
+          int status = spotify.getCurrentlyPlaying(printCurrentlyPlayingToSerial, "GB");
+          if (status == 200)
+          {
+              Serial.println("Successfully got currently playing");
+          }
+          else if (status == 204)
+          {
+              Serial.println("Doesn't seem to be anything playing");
+          }
+          else
+          {
+              Serial.print("Error: ");
+              Serial.println(status);
+          }
+          requestDueTime = millis() + delayBetweenRequests;
+        }
       }
     }
 
@@ -160,37 +292,12 @@ class SpotifyUsermod : public Usermod {
      * 
      * addToConfig() will make your settings editable through the Usermod Settings page automatically.
      *
-     * Usermod Settings Overview:
-     * - Numeric values are treated as floats in the browser.
-     *   - If the numeric value entered into the browser contains a decimal point, it will be parsed as a C float
-     *     before being returned to the Usermod.  The float data type has only 6-7 decimal digits of precision, and
-     *     doubles are not supported, numbers will be rounded to the nearest float value when being parsed.
-     *     The range accepted by the input field is +/- 1.175494351e-38 to +/- 3.402823466e+38.
-     *   - If the numeric value entered into the browser doesn't contain a decimal point, it will be parsed as a
-     *     C int32_t (range: -2147483648 to 2147483647) before being returned to the usermod.
-     *     Overflows or underflows are truncated to the max/min value for an int32_t, and again truncated to the type
-     *     used in the Usermod when reading the value from ArduinoJson.
-     * - Pin values can be treated differently from an integer value by using the key name "pin"
-     *   - "pin" can contain a single or array of integer values
-     *   - On the Usermod Settings page there is simple checking for pin conflicts and warnings for special pins
-     *     - Red color indicates a conflict.  Yellow color indicates a pin with a warning (e.g. an input-only pin)
-     *   - Tip: use int8_t to store the pin value in the Usermod, so a -1 value (pin not set) can be used
-     *
-     * See usermod_v2_auto_save.h for an example that saves Flash space by reusing ArduinoJson key name strings
-     * 
-     * If you need a dedicated settings page with custom layout for your Usermod, that takes a lot more work.  
-     * You will have to add the setting to the HTML, xml.cpp and set.cpp manually.
-     * See the WLED Soundreactive fork (code and wiki) for reference.  https://github.com/atuline/WLED
-     * 
-     * I highly recommend checking out the basics of ArduinoJson serialization and deserialization in order to use custom settings!
      */
     void addToConfig(JsonObject& root)
     {
       Usermod::addToConfig(root); JsonObject top = root[FPSTR(_name)]; //WLEDMM
-
-      //save these vars persistently whenever settings are saved
-      top["great"] = userVar0;
       top["refreshToken"] = refreshToken;
+      top["code"] = "example3";
     }
 
 
