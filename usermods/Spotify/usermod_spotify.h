@@ -1,46 +1,12 @@
 #pragma once
 
 #include "wled.h"
+#include <SpotifyArduino.h>
 
 /*
- * Usermods allow you to add own functionality to WLED more easily
- * See: https://github.com/Aircoookie/WLED/wiki/Add-own-functionality
- * 
- * This is an example for a v2 usermod.
- * v2 usermods are class inheritance based and can (but don't have to) implement more functions, each of them is shown in this example.
- * Multiple v2 usermods can be added to one compilation easily.
- * 
- * Creating a usermod:
- * This file serves as an example. If you want to create a usermod, it is recommended to use usermod_v2_empty.h from the usermods folder as a template.
- * Please remember to rename the class and file to a descriptive name.
- * You may also use multiple .h and .cpp files.
- * 
- * Using a usermod:
- * 1. Copy the usermod into the sketch folder (same folder as wled00.ino)
- * 2. Register the usermod by adding #include "usermod_filename.h" in the top and registerUsermod(new MyUsermodClass()) in the bottom of usermods_list.cpp
- */
-
-/* WLEDMM: move usermod variables to class. 
-
-As of March 2023 this is work in progress, more variables will be moved in the future.
-See Example v2, Temperature, MPU6050 and weather and fastled (rest to be done) as examples which has been converted using the steps below:
-
-Part 1
-- remove bool enabled = false/true (now default false)
-- remove static const char _name[] and _enabled[]
-- add constructor which calls superclass (temp?): XXXUsermod(const char *name, bool enabled):Usermod(name, enabled) {} 
-- replace _enabled with "enabled"
-- remove const char PROGMEM init for  _name[] and _enabled[]
-Part 2
-- Remove bool initDone = false;
-- addToConfig: replace createNestedObject with Usermod::addToConfig(root); JsonObject top = root[FPSTR(_name)];
-- readFromConfig: replace !top.isNull and enabled with bool configComplete = Usermod::readFromConfig(root);JsonObject top = root[FPSTR(_name)];
-Part 3
-- remove unsigned long lastTime = 0; //WLEDMM
-
+Fetch now playing data from Spotify
 */
 
-//class name. Use something descriptive and leave the ": public Usermod" part :)
 class SpotifyUsermod : public Usermod {
 
   private:
@@ -53,6 +19,10 @@ class SpotifyUsermod : public Usermod {
     float testFloat = 42.42;
     String testString = "Forty-Two";
 
+    String clientId = "";
+    String clientSecret = "";
+    String refreshToken = "";
+
     // These config variables have defaults set inside readFromConfig()
     int testInt;
     long testLong;
@@ -61,39 +31,21 @@ class SpotifyUsermod : public Usermod {
     // any private methods should go here (non-inline method should be defined out of class)
     void publishMqtt(const char* state, bool retain = false); // example for publishing MQTT message
 
+    const char *loginLinkTemplate = "<a href=\"https://accounts.spotify.com/authorize?client_id=%s&response_type=code&redirect_uri=%s&scope=%s\">Login</a>";
+    const char *scope = "user-read-playback-state";
+
+    // WiFiClientSecure client;
+    // SpotifyArduino spotify(client, clientId.c_str(), clientSecret.c_str(), refreshToken.c_str());
+
+    unsigned long delayBetweenRequests = 60000; // Time between requests (1 minute)
+    unsigned long requestDueTime;               //time when request due
+
 
   public:
 
-    SpotifyUsermod(const char *name, bool enabled):Usermod(name, enabled) {} //WLEDMM
+    SpotifyUsermod(bool enabled):Usermod("Spotify", enabled) {} //WLEDMM
 
-    // non WLED related methods, may be used for data exchange between usermods (non-inline methods should be defined out of class)
-
-    /**
-     * Enable/Disable the usermod
-     */
-    // inline void enable(bool enable) { enabled = enable; }
-
-    /**
-     * Get usermod enabled/disabled state
-     */
-    // inline bool isEnabled() { return enabled; }
-
-    // in such case add the following to another usermod:
-    //  in private vars:
-    //   #ifdef USERMOD_EXAMPLE
-    //   MyExampleUsermod* UM;
-    //   #endif
-    //  in setup()
-    //   #ifdef USERMOD_EXAMPLE
-    //   UM = (MyExampleUsermod*) usermods.lookup(USERMOD_ID_EXAMPLE);
-    //   #endif
-    //  somewhere in loop() or other member method
-    //   #ifdef USERMOD_EXAMPLE
-    //   if (UM != nullptr) isExampleEnabled = UM->isEnabled();
-    //   if (!isExampleEnabled) UM->enable(true);
-    //   #endif
-
-
+    
     // methods called by WLED (can be inlined as they are called only once but if you call them explicitly define them out of class)
 
     /*
@@ -102,8 +54,6 @@ class SpotifyUsermod : public Usermod {
      * You can use it to initialize variables, sensors or similar.
      */
     void setup() {
-      // do your set-up here
-      //Serial.println("Hello from my usermod!");
       initDone = true;
     }
 
@@ -177,7 +127,7 @@ class SpotifyUsermod : public Usermod {
       JsonObject usermod = root[FPSTR(_name)];
       if (usermod.isNull()) usermod = root.createNestedObject(FPSTR(_name));
 
-      //usermod["user0"] = userVar0;
+      usermod["refreshToken"] = refreshToken;
     }
 
 
@@ -192,7 +142,7 @@ class SpotifyUsermod : public Usermod {
       JsonObject usermod = root[FPSTR(_name)];
       if (!usermod.isNull()) {
         // expect JSON usermod data in usermod name object: {"ExampleUsermod:{"user0":10}"}
-        userVar0 = usermod["user0"] | userVar0; //if "user0" key exists in JSON, update, else keep old value
+        refreshToken = usermod["refreshToken"] | refreshToken; //if "refreshToken" key exists in JSON, update, else keep old value
       }
       // you can as well check WLED state JSON keys
       //if (root["bri"] == 255) Serial.println(F("Don't burn down your garage!"));
@@ -240,15 +190,7 @@ class SpotifyUsermod : public Usermod {
 
       //save these vars persistently whenever settings are saved
       top["great"] = userVar0;
-      top["testBool"] = testBool;
-      top["testInt"] = testInt;
-      top["testLong"] = testLong;
-      top["testULong"] = testULong;
-      top["testFloat"] = testFloat;
-      top["testString"] = testString;
-      JsonArray pinArray = top.createNestedArray("pin");
-      pinArray.add(testPins[0]);
-      pinArray.add(testPins[1]); 
+      top["refreshToken"] = refreshToken;
     }
 
 
@@ -274,19 +216,7 @@ class SpotifyUsermod : public Usermod {
 
       bool configComplete = Usermod::readFromConfig(root);JsonObject top = root[FPSTR(_name)]; //WLEDMM
 
-      configComplete &= getJsonValue(top["great"], userVar0);
-      configComplete &= getJsonValue(top["testBool"], testBool);
-      configComplete &= getJsonValue(top["testULong"], testULong);
-      configComplete &= getJsonValue(top["testFloat"], testFloat);
-      configComplete &= getJsonValue(top["testString"], testString);
-
-      // A 3-argument getJsonValue() assigns the 3rd argument as a default value if the Json value is missing
-      configComplete &= getJsonValue(top["testInt"], testInt, 42);  
-      configComplete &= getJsonValue(top["testLong"], testLong, -42424242);
-
-      // "pin" fields have special handling in settings page (or some_pin as well)
-      configComplete &= getJsonValue(top["pin"][0], testPins[0], -1);
-      configComplete &= getJsonValue(top["pin"][1], testPins[1], -1);
+      configComplete &= getJsonValue(top["refreshToken"], refreshToken);
 
       return configComplete;
     }
@@ -299,45 +229,10 @@ class SpotifyUsermod : public Usermod {
      */
     void appendConfigData()
     {
-      oappend(SET_F("addInfo('")); oappend(String(FPSTR(_name)).c_str()); oappend(SET_F(":great")); oappend(SET_F("',1,'<i>(this is a great config value)</i>');"));
-      oappend(SET_F("addInfo('")); oappend(String(FPSTR(_name)).c_str()); oappend(SET_F(":testString")); oappend(SET_F("',1,'enter any string you want');"));
-      oappend(SET_F("dd=addDropdown('")); oappend(String(FPSTR(_name)).c_str()); oappend(SET_F("','testInt');"));
-      oappend(SET_F("addOption(dd,'Nothing',0);"));
-      oappend(SET_F("addOption(dd,'Everything',42);"));
-    }
-
-
-    /*
-     * handleOverlayDraw() is called just before every show() (LED strip update frame) after effects have set the colors.
-     * Use this to blank out some LEDs or set them to a different color regardless of the set effect mode.
-     * Commonly used for custom clocks (Cronixie, 7 segment)
-     */
-    void handleOverlayDraw()
-    {
-      //strip.setPixelColor(0, RGBW32(0,0,0,0)) // set the first pixel to black
-    }
-
-
-    /**
-     * handleButton() can be used to override default button behaviour. Returning true
-     * will prevent button working in a default way.
-     * Replicating button.cpp
-     */
-    bool handleButton(uint8_t b) {
-      yield();
-      // ignore certain button types as they may have other consequences
-      if (!enabled
-       || buttonType[b] == BTN_TYPE_NONE
-       || buttonType[b] == BTN_TYPE_RESERVED
-       || buttonType[b] == BTN_TYPE_PIR_SENSOR
-       || buttonType[b] == BTN_TYPE_ANALOG
-       || buttonType[b] == BTN_TYPE_ANALOG_INVERTED) {
-        return false;
-      }
-
-      bool handled = false;
-      // do your button handling here
-      return handled;
+      char populatedLoginLink[800];
+      String callbackURI = "http://" +  WiFi.localIP().toString() + "/settings/um?um=Spotify";
+      sprintf(populatedLoginLink, loginLinkTemplate, clientId.c_str(), callbackURI.c_str(), scope);
+      oappend(SET_F("addInfo('")); oappend(String(FPSTR(_name)).c_str()); oappend(SET_F(":refreshToken")); oappend(SET_F("',1,'")); oappend(populatedLoginLink);oappend("');");
     }
   
 
@@ -402,7 +297,7 @@ class SpotifyUsermod : public Usermod {
 
 // implementation of non-inline member methods
 
-void MyExampleUsermod::publishMqtt(const char* state, bool retain)
+void SpotifyUsermod::publishMqtt(const char* state, bool retain)
 {
 #ifndef WLED_DISABLE_MQTT
   //Check if MQTT Connected, otherwise it will crash the 8266

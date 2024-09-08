@@ -413,7 +413,7 @@ void registerUsermods()
 #endif
 
 #ifdef USERMOD_SPOTIFY
-  usermods.add(new AutoPlaylistUsermod(false));
+  usermods.add(new SpotifyUsermod(false));
 #endif
 
 
