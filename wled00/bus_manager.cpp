@@ -162,7 +162,7 @@ void BusDigital::show() {
   PolyBus::show(_busPtr, _iType);
 }
 
-bool BusDigital::canShow() const {
+bool BusDigital::canShow() {
   return PolyBus::canShow(_busPtr, _iType);
 }
 
@@ -885,7 +885,7 @@ uint32_t BusHub75Matrix::getPixelColor(uint16_t pix) const {
 
 void BusHub75Matrix::setBrightness(uint8_t b, bool immediate) {
   _bri = b;
-  if (_bri > 238) _bri=238;
+  // if (_bri > 238) _bri=238; // not strictly needed. Enable this line if you see glitches at highest brightness.
   display->setBrightness(_bri);
 }
 
