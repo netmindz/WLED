@@ -118,7 +118,7 @@ static uint8_t getMax(uint8_t* myArray) {
 
 static uint8_t* getSmallFFT(uint8_t* fftresult) {
   static uint8_t data[3] = {0};
-  uint8_t group1[5] = {fftresult[0],  fftresult[1],  fftresult[3], fftresult[4], fftresult[5] };
+  uint8_t group1[3] = {fftresult[0],  fftresult[1],  fftresult[2]};
   data[0] = getMax(group1);
   uint8_t group2[5] = {fftresult[6], fftresult[7], fftresult[8], fftresult[9], fftresult[10]};
   data[1] = getMax(group2);
@@ -7342,10 +7342,10 @@ uint16_t mode_DJLight(void) {                   // Written by Stefan Petrick, Ad
     CRGB color = CRGB(0,0,0);
     // color = CRGB(fftResult[15]/2, fftResult[5]/2, fftResult[0]/2);   // formula from 0.13.x (10Khz): R = 3880-5120, G=240-340, B=60-100
     if (SEGENV.check1) {
-      color = CRGB(fftSmall[2]/2, fftSmall[1]/2, fftSmall[0]/2);
+      color = CRGB(fftSmall[2], fftSmall[1]/2, fftSmall[0]/3);
     }
     else if(true) {
-      color = CRGB(fftResult[15]/2, fftResult[5]/2, fftResult[0]/2);   // formula from 0.13.x (10Khz): R = 3880-5120, G=240-340, B=60-100
+      color = CRGB(fftResult[15], fftResult[5]/2, fftResult[0]/2);   // formula from 0.13.x (10Khz): R = 3880-5120, G=240-340, B=60-100
     } else {
       // candy factory: an attempt to get more colors
       color = CRGB(fftResult[11]/2 + fftResult[12]/4 + fftResult[14]/4, // red  : 2412-3704 + 4479-7106 
@@ -7365,11 +7365,11 @@ uint16_t mode_DJLight(void) {                   // Written by Stefan Petrick, Ad
     if (color.getLuma() > 32) {                                      // don't change "dark" pixels
       CHSV hsvColor = rgb2hsv_approximate(color);
       hsvColor.v = min(max(hsvColor.v, (uint8_t)48), (uint8_t)204);  // 48 < brightness < 204
-      if (SEGENV.check1)
-        hsvColor.s = max(hsvColor.s, (uint8_t)204);                  // candy factory mode: strongly turn up color saturation (> 192)
-      else
+      // if (SEGENV.check1)
+      //   hsvColor.s = max(hsvColor.s, (uint8_t)204);                  // candy factory mode: strongly turn up color saturation (> 192)
+      // else
         hsvColor.s = max(hsvColor.s, (uint8_t)108);                  // normal mode: turn up color saturation to avoid pastels
-      color = hsvColor;
+      // color = hsvColor;
     }
     //if (color.getLuma() > 12) color.maximizeBrightness();          // for testing
 
