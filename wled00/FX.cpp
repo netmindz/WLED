@@ -106,6 +106,27 @@ static um_data_t* getAudioData() {
   }
   return um_data;
 }
+
+
+static uint8_t getMax(uint8_t* myArray) {
+  uint8_t maxV = 0;
+  for (int i = 0; i < (sizeof(myArray) / sizeof(myArray[0])); i++) {
+      maxV = max(myArray[i], maxV);
+   }
+   return maxV;
+}
+
+static uint8_t* getSmallFFT(uint8_t* fftresult) {
+  static uint8_t data[3] = {0};
+  uint8_t group1[5] = {fftresult[0],  fftresult[1],  fftresult[3], fftresult[4], fftresult[5] };
+  data[0] = getMax(group1);
+  uint8_t group2[5] = {fftresult[6], fftresult[7], fftresult[8], fftresult[9], fftresult[10]};
+  data[1] = getMax(group2);
+  uint8_t group3[5] = {fftresult[11], fftresult[12], fftresult[13], fftresult[14], fftresult[15]};
+  data[2] = getMax(group3);
+  // USER_PRINTF("%u %u %u\n", data[0], data[1], data[2]);
+  return data;
+} 
 // effect functions
 
 /*
@@ -7306,6 +7327,7 @@ uint16_t mode_DJLight(void) {                   // Written by Stefan Petrick, Ad
 
   um_data_t *um_data = getAudioData();
   uint8_t *fftResult = (uint8_t*)um_data->u_data[2];
+  uint8_t *fftSmall = getSmallFFT(fftResult);
   float volumeSmth    = *(float*)um_data->u_data[0];
 
   if (SEGENV.call == 0) {
@@ -7319,8 +7341,11 @@ uint16_t mode_DJLight(void) {                   // Written by Stefan Petrick, Ad
 
     CRGB color = CRGB(0,0,0);
     // color = CRGB(fftResult[15]/2, fftResult[5]/2, fftResult[0]/2);   // formula from 0.13.x (10Khz): R = 3880-5120, G=240-340, B=60-100
-    if (!SEGENV.check1) {
-      color = CRGB(fftResult[12]/2, fftResult[3]/2, fftResult[1]/2);    // formula for 0.14.x  (22Khz): R = 3015-3704, G=216-301, B=86-129
+    if (SEGENV.check1) {
+      color = CRGB(fftSmall[2]/2, fftSmall[1]/2, fftSmall[0]/2);
+    }
+    else if(true) {
+      color = CRGB(fftResult[15]/2, fftResult[5]/2, fftResult[0]/2);   // formula from 0.13.x (10Khz): R = 3880-5120, G=240-340, B=60-100
     } else {
       // candy factory: an attempt to get more colors
       color = CRGB(fftResult[11]/2 + fftResult[12]/4 + fftResult[14]/4, // red  : 2412-3704 + 4479-7106 
