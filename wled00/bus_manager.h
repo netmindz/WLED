@@ -54,18 +54,18 @@ struct BusConfig {
   uint8_t skipAmount;
   bool refreshReq;
   uint8_t autoWhite;
-  uint8_t pins[5] = {LEDPIN, 255, 255, 255, 255};
+  uint8_t pins[5] = {LEDPIN, 255, 255, 255, 255}; // WLEDMM warning: this means that BusConfig cannot handle nore than 5 pins per bus!
   uint16_t frequency;
   BusConfig(uint8_t busType, uint8_t* ppins, uint16_t pstart, uint16_t len = 1, uint8_t pcolorOrder = COL_ORDER_GRB, bool rev = false, uint8_t skip = 0, byte aw=RGBW_MODE_MANUAL_ONLY, uint16_t clock_kHz=0U) {
     refreshReq = (bool) GET_BIT(busType,7);
     type = busType & 0x7F;  // bit 7 may be/is hacked to include refresh info (1=refresh in off state, 0=no refresh)
     count = len; start = pstart; colorOrder = pcolorOrder; reversed = rev; skipAmount = skip; autoWhite = aw; frequency = clock_kHz;
-    uint8_t nPins = 1;
-    if (type >= TYPE_NET_DDP_RGB && type < 96) nPins = 4; //virtual network bus. 4 "pins" store IP address
-    else if (type > 47) nPins = 2;
-    else if (type > 40 && type < 46) nPins = NUM_PWM_PINS(type);
-    else if (type >= TYPE_HUB75MATRIX && type <= (TYPE_HUB75MATRIX + 10)) nPins = 0;
-    for (uint8_t i = 0; i < min(unsigned(nPins),5U); i++) pins[i] = ppins[i];   //softhack007 fix for potential array out-of-bounds access
+    uint8_t nPins = 1;                                                                 // default = only one pin (clockless LEDs like WS281x)
+    if ((type >= TYPE_NET_DDP_RGB) && (type < (TYPE_NET_DDP_RGB + 16))) nPins = 4;     // virtual network bus. 4 "pins" store IP address
+    else if ((type > 47) && (type < 63)) nPins = 2;                                    // (data + clock / SPI) busses - two pins
+    else if (IS_PWM(type)) nPins = NUM_PWM_PINS(type);                                 // PWM needs 1..5 pins
+    else if (type >= TYPE_HUB75MATRIX && type <= (TYPE_HUB75MATRIX + 10)) nPins = 1;   // HUB75 does not use LED pins, but we need to preserve the "chain length" parameter
+    for (uint8_t i = 0; i < min(unsigned(nPins), sizeof(pins)/sizeof(pins[0])); i++) pins[i] = ppins[i];   //softhack007 fix for potential array out-of-bounds access
   }
 
   //validates start and length and extends total if needed
