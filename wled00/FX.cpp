@@ -108,22 +108,33 @@ static um_data_t* getAudioData() {
 }
 
 
-static uint8_t getMax(uint8_t* myArray) {
+static uint8_t getMax(uint8_t* myArray, int arraySize) {
   uint8_t maxV = 0;
-  for (int i = 0; i < (sizeof(myArray) / sizeof(myArray[0])); i++) {
+  for (int i = 0; i < arraySize; i++) {
       maxV = max(myArray[i], maxV);
    }
    return maxV;
 }
 
+static uint8_t decayValue(uint8_t last, uint8_t newValue) {
+  if(last == 0 || SEGMENT.check2 == false) {
+    return newValue;
+  }
+  return max((uint8_t) (last * 0.8), newValue);
+}
+
 static uint8_t* getSmallFFT(uint8_t* fftresult) {
   static uint8_t data[3] = {0};
-  uint8_t group1[3] = {fftresult[0],  fftresult[1],  fftresult[2]};
-  data[0] = getMax(group1);
-  uint8_t group2[5] = {fftresult[6], fftresult[7], fftresult[8], fftresult[9], fftresult[10]};
-  data[1] = getMax(group2);
-  uint8_t group3[5] = {fftresult[11], fftresult[12], fftresult[13], fftresult[14], fftresult[15]};
-  data[2] = getMax(group3);
+
+  uint8_t group1[3] = {fftresult[0],  fftresult[1]/2,  fftresult[2]/2};
+  data[0] = decayValue(data[0], getMax(group1, 3));
+
+  uint8_t group2[3] = {fftresult[4]/2, fftresult[5], fftresult[6]/6};
+  data[1] = decayValue(data[1], getMax(group2, 3));
+  
+  uint8_t group3[3] = {fftresult[13]/2, fftresult[14], fftresult[15]/2};
+  data[2] = decayValue(data[2], getMax(group3, 5));
+  
   // USER_PRINTF("%u %u %u\n", data[0], data[1], data[2]);
   return data;
 } 
@@ -7342,7 +7353,7 @@ uint16_t mode_DJLight(void) {                   // Written by Stefan Petrick, Ad
     CRGB color = CRGB(0,0,0);
     // color = CRGB(fftResult[15]/2, fftResult[5]/2, fftResult[0]/2);   // formula from 0.13.x (10Khz): R = 3880-5120, G=240-340, B=60-100
     if (SEGENV.check1) {
-      color = CRGB(fftSmall[2], fftSmall[1]/2, fftSmall[0]/3);
+      color = CRGB(fftSmall[2]/2, fftSmall[1]/2, fftSmall[0]/3);
     }
     else if(true) {
       color = CRGB(fftResult[15], fftResult[5]/2, fftResult[0]/2);   // formula from 0.13.x (10Khz): R = 3880-5120, G=240-340, B=60-100
@@ -7385,7 +7396,7 @@ uint16_t mode_DJLight(void) {                   // Written by Stefan Petrick, Ad
 
   return FRAMETIME;
 } // mode_DJLight()
-static const char _data_FX_MODE_DJLIGHT[] PROGMEM = "DJ Light@Speed,,,,,Candy Factory;;;01f;m12=2,si=0"; // Arc, Beatsin
+static const char _data_FX_MODE_DJLIGHT[] PROGMEM = "DJ Light@Speed,,,,,Small FFT,Decay;;;01f;m12=2,si=0"; // Arc, Beatsin
 
 
 ////////////////////
