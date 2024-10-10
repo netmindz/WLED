@@ -387,10 +387,7 @@ class BusHub75Matrix : public Bus {
 
     void setBrightness(uint8_t b, bool immediate) override;
 
-    uint8_t getPins(uint8_t* pinArray) const override {
-      pinArray[0] = mxconfig.chain_length;
-      return 1;
-    } // Fake value due to keep finaliseInit happy
+    uint8_t getPins(uint8_t* pinArray) const override;
 
     void deallocatePins();
 
@@ -407,6 +404,7 @@ class BusHub75Matrix : public Bus {
     unsigned _panelWidth = 0;
     CRGB *_ledBuffer = nullptr;
     byte *_ledsDirty = nullptr;
+    const int PIN_COUNT = 14;
 };
 #endif
 
