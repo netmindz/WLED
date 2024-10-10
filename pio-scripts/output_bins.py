@@ -117,10 +117,14 @@ def bin_rename_copy(source, target, env):
     release_name = _get_cpp_define_value(env, "WLED_RELEASE_NAME")
 
     if release_name:
+        print("release name found: {}".format(release_name))
         _create_dirs(["release"])
         version = _get_cpp_define_value(env, "WLED_VERSION")
         release_file = "{}release{}WLEDMM_{}_{}.bin".format(OUTPUT_DIR, os.path.sep, version, release_name) #WLEDMM: add MM postfix to WLED
+        print("release file name {}".format(release_file))
         shutil.copy(str(target[0]), release_file)
+    else:
+        print("No release name found, skipping release file copy")
 
     # check if new target files exist and remove if necessary
     for f in [map_file, bin_file]:

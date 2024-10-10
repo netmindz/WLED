@@ -72,6 +72,7 @@ jobs:
       with:
         name: firmware-release-${{ matrix.environment }}
         path: build_output/release/*.bin
+        if-no-files-found: error
   release:
     name: Create Release
     runs-on: ubuntu-latest
