@@ -3,42 +3,13 @@ name: PlatformIO CI
 on: [push, pull_request]
 
 jobs:
-
-  get_default_envs:
-    name: Gather Environments
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - name: Cache pip
-      uses: actions/cache@v4
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
-    - uses: actions/setup-python@v5
-      with:
-        python-version: '3.9'
-    - name: Install PlatformIO
-      run: pip install -r requirements.txt
-    - name: Get default environments
-      env:
-        PLATFORMIO_DEFAULT_ENVS: LavaLamp, 241Rings, esp32_4MB_V4_S
-      id: envs
-      run: |
-        echo "environments=$(pio project config --json-output | jq -cr '.[0][1][0][1]')" >> $GITHUB_OUTPUT
-    outputs:
-      environments: ${{ steps.envs.outputs.environments }}
-
-
   build:
     name: Builds
     runs-on: ubuntu-latest
-    needs: get_default_envs
     strategy:
       fail-fast: false
       matrix:
-        environment: ${{ fromJSON(needs.get_default_envs.outputs.environments) }}
+        environment: [LavaLamp, 241Rings, esp32_4MB_V4_S]
     steps:
     - uses: actions/checkout@v4
     - name: Cache pip
