@@ -521,6 +521,10 @@ void BusNetwork::cleanup() {
 
 #ifdef WLED_ENABLE_HUB75MATRIX
 #warning "HUB75 driver enabled (experimental)"
+#ifdef ESP8266
+#error ESP8266 does not support HUB75
+#endif
+
 
 BusHub75Matrix::BusHub75Matrix(BusConfig &bc) : Bus(bc.type, bc.start, bc.autoWhite) {
   size_t lastHeap = ESP.getFreeHeap();
@@ -529,15 +533,15 @@ BusHub75Matrix::BusHub75Matrix(BusConfig &bc) : Bus(bc.type, bc.start, bc.autoWh
   fourScanPanel = nullptr;
   _len = 0;
 
-    mxconfig.double_buff = false; // Use our own memory-optimised buffer rather than the driver's own double-buffer  
- 
+  mxconfig.double_buff = false; // Use our own memory-optimised buffer rather than the driver's own double-buffer
+
   // mxconfig.driver = HUB75_I2S_CFG::ICN2038S;  // experimental - use specific shift register driver
   // mxconfig.driver = HUB75_I2S_CFG::FM6124;    // try this driver in case you panel stays dark, or when colors look too pastel
 
   // mxconfig.latch_blanking = 3;
   // mxconfig.i2sspeed = HUB75_I2S_CFG::HZ_10M;  // experimental - 5MHZ should be enugh, but colours looks slightly better at 10MHz
   // mxconfig.min_refresh_rate = 90;
-  mxconfig.clkphase = false; // can help in case that the leftmost column is invisible, or pixels on the right side "bleeds out" to the left.
+  mxconfig.clkphase = bc.reversed; // can help in case that the leftmost column is invisible, or pixels on the right side "bleeds out" to the left.
  
   // How many panels we have connected, cap at sane value
   mxconfig.chain_length = max((uint8_t) 1, min(bc.pins[0], (uint8_t) 4)); // prevent bad data preventing boot due to low memory
@@ -590,28 +594,15 @@ BusHub75Matrix::BusHub75Matrix(BusConfig &bc) : Bus(bc.type, bc.start, bc.autoWh
   } else mxconfig.setPixelColorDepthBits(8);
 #endif
 
+
+//  HUB75_I2S_CFG::i2s_pins _pins={R1_PIN, G1_PIN, B1_PIN, R2_PIN, G2_PIN, B2_PIN, A_PIN, B_PIN, C_PIN, D_PIN, E_PIN, LAT_PIN, OE_PIN, CLK_PIN};
+
 #if defined(ARDUINO_ADAFRUIT_MATRIXPORTAL_ESP32S3) // MatrixPortal ESP32-S3
 
   // https://www.adafruit.com/product/5778
-
   USER_PRINTLN("MatrixPanel_I2S_DMA - Matrix Portal S3 config");
+  mxconfig.gpio = { 42, 41, 40, 38, 39, 37,  45, 36, 48, 35, 21, 47, 14, 2 };
 
-  mxconfig.gpio.r1 = 42;
-  mxconfig.gpio.g1 = 41;
-  mxconfig.gpio.b1 = 40;
-  mxconfig.gpio.r2 = 38;
-  mxconfig.gpio.g2 = 39;
-  mxconfig.gpio.b2 = 37; 
-
-  mxconfig.gpio.lat = 47;
-  mxconfig.gpio.oe  = 14;
-  mxconfig.gpio.clk = 2;
-
-  mxconfig.gpio.a = 45;
-  mxconfig.gpio.b = 36;
-  mxconfig.gpio.c = 48;
-  mxconfig.gpio.d = 35;
-  mxconfig.gpio.e = 21;
 
 #elif defined(CONFIG_IDF_TARGET_ESP32S3) && defined(BOARD_HAS_PSRAM)// ESP32-S3
 
@@ -689,28 +680,11 @@ BusHub75Matrix::BusHub75Matrix(BusConfig &bc) : Bus(bc.type, bc.start, bc.autoWh
 
 /*
     ESP32 with SmartMatrix's default pinout - ESP32_FORUM_PINOUT
-    
     https://github.com/pixelmatix/SmartMatrix/blob/teensylc/src/MatrixHardware_ESP32_V0.h
-
     Can use a board like https://github.com/rorosaurus/esp32-hub75-driver
 */
 
-  mxconfig.gpio.r1 = 2;
-  mxconfig.gpio.g1 = 15;
-  mxconfig.gpio.b1 = 4;
-  mxconfig.gpio.r2 = 16;
-  mxconfig.gpio.g2 = 27;
-  mxconfig.gpio.b2 = 17; 
-
-  mxconfig.gpio.lat = 26;
-  mxconfig.gpio.oe  = 25;
-  mxconfig.gpio.clk = 22;
-
-  mxconfig.gpio.a = 5;
-  mxconfig.gpio.b = 18;
-  mxconfig.gpio.c = 19;
-  mxconfig.gpio.d = 21;
-  mxconfig.gpio.e = 12;
+ mxconfig.gpio = { 2, 15, 4, 16, 27, 17, 5, 18, 19, 21, 12, 26, 25, 22 };
 
 #else
   USER_PRINTLN("MatrixPanel_I2S_DMA - Default pins");
@@ -797,9 +771,10 @@ BusHub75Matrix::BusHub75Matrix(BusConfig &bc) : Bus(bc.type, bc.start, bc.autoWh
 
     if (_ledBuffer) free(_ledBuffer);                 // should not happen
     if (_ledsDirty) free(_ledsDirty);                 // should not happen
-
+    DEBUG_PRINTLN("MatrixPanel_I2S_DMA allocate memory");
     _ledsDirty = (byte*) malloc(getBitArrayBytes(_len));  // create LEDs dirty bits
-
+    DEBUG_PRINTLN("MatrixPanel_I2S_DMA allocate memory ok");
+   
     if (_ledsDirty == nullptr) {
       display->stopDMAoutput();
       delete display; display = nullptr;
@@ -916,7 +891,6 @@ uint32_t __attribute__((hot)) BusHub75Matrix::getPixelColorRestored(uint16_t pix
 
 void BusHub75Matrix::setBrightness(uint8_t b, bool immediate) {
   _bri = b;
-  // if (_bri > 238) _bri=238; // not strictly needed. Enable this line if you see glitches at highest brightness.
   display->setBrightness(_bri);
 }
 
