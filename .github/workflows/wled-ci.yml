@@ -7,8 +7,6 @@ jobs:
   get_default_envs:
     name: Gather Environments
     runs-on: ubuntu-latest
-    env:
-      PLATFORMIO_DEFAULT_ENVS: "LavaLamp,241Rings,esp32_4MB_V4_S"
     steps:
     - uses: actions/checkout@v4
     - name: Cache pip
@@ -24,6 +22,8 @@ jobs:
     - name: Install PlatformIO
       run: pip install -r requirements.txt
     - name: Get default environments
+      env:
+        PLATFORMIO_DEFAULT_ENVS: "LavaLamp,241Rings,esp32_4MB_V4_S"
       id: envs
       run: |
         echo "environments=$(pio project config --json-output | jq -cr '.[0][1][0][1]')" >> $GITHUB_OUTPUT
