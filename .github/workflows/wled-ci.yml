@@ -23,7 +23,7 @@ jobs:
       run: pip install -r requirements.txt
     - name: Get default environments
       env:
-        PLATFORMIO_DEFAULT_ENVS: "LavaLamp, 241Rings, esp32_4MB_V4_S"
+        PLATFORMIO_DEFAULT_ENVS: LavaLamp, 241Rings, esp32_4MB_V4_S
       id: envs
       run: |
         echo "environments=$(pio project config --json-output | jq -cr '.[0][1][0][1]')" >> $GITHUB_OUTPUT
