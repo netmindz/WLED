@@ -17,6 +17,8 @@
 void handleNotifications()
 {
   IPAddress localIP;
+  WiFiUDP& notifierUdp = getNotifierUdp();
+  WiFiUDP& notifier2Udp = getNotifier2Udp();
 
   //send second notification if enabled
   notifyRetryIfNeeded();
@@ -32,17 +34,17 @@ void handleNotifications()
   if (realtimeMode && millis() > realtimeTimeout) exitRealtime();
 
   //receive UDP notifications
-  if (!udpConnected) return;
+  if (!isUdpConnected()) return;
 
   bool isSupp = false;
   size_t packetSize = notifierUdp.parsePacket();
-  if (!packetSize && udp2Connected) {
+  if (!packetSize && isUdp2Connected()) {
     packetSize = notifier2Udp.parsePacket();
     isSupp = true;
   }
 
   //hyperion / raw RGB
-  if (!packetSize && udpRgbConnected) {
+  if (!packetSize && isUdpRgbConnected()) {
     if (handleHyperionPacket()) return;
   }
 

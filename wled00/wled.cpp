@@ -25,6 +25,28 @@
 #endif
 extern "C" void usePWMFixedNMI();
 
+// The notifier/realtime UDP sockets and their connection state are owned here
+// (this is where they're opened) and exposed to the rest of the codebase via
+// the accessors below instead of as raw WLED_GLOBAL externs. Previously these
+// were plain globals - once udp.cpp was split into per-protocol files (see
+// wled00/sync/), each protocol file ended up reaching into them directly,
+// which is exactly the kind of implicit cross-file coupling an accessor
+// boundary is meant to prevent.
+struct NotifierSockets {
+  WiFiUDP notifierUdp, notifier2Udp, rgbUdp;
+  bool udpConnected = false;
+  bool udp2Connected = false;
+  bool udpRgbConnected = false;
+};
+static NotifierSockets notifierSockets;
+
+WiFiUDP& getNotifierUdp()  { return notifierSockets.notifierUdp;  }
+WiFiUDP& getNotifier2Udp() { return notifierSockets.notifier2Udp; }
+WiFiUDP& getRgbUdp()       { return notifierSockets.rgbUdp;       }
+bool isUdpConnected()      { return notifierSockets.udpConnected;    }
+bool isUdp2Connected()     { return notifierSockets.udp2Connected;   }
+bool isUdpRgbConnected()   { return notifierSockets.udpRgbConnected; }
+
 /*
  * Main WLED class implementation. Mostly initialization and connection logic
  */
@@ -723,13 +745,13 @@ void WLED::initAP(bool resetAP)
     DEBUG_PRINTLN(F("Init AP interfaces"));
     server.begin();
     if (udpPort > 0 && udpPort != ntpLocalPort) {
-      udpConnected = notifierUdp.begin(udpPort);
+      notifierSockets.udpConnected = notifierSockets.notifierUdp.begin(udpPort);
     }
     if (udpRgbPort > 0 && udpRgbPort != ntpLocalPort && udpRgbPort != udpPort) {
-      udpRgbConnected = rgbUdp.begin(udpRgbPort);
+      notifierSockets.udpRgbConnected = notifierSockets.rgbUdp.begin(udpRgbPort);
     }
     if (udpPort2 > 0 && udpPort2 != ntpLocalPort && udpPort2 != udpPort && udpPort2 != udpRgbPort) {
-      udp2Connected = notifier2Udp.begin(udpPort2);
+      notifierSockets.udp2Connected = notifierSockets.notifier2Udp.begin(udpPort2);
     }
     e131.begin(false, e131Port, e131Universe, E131_MAX_UNIVERSE_COUNT);
     ddp.begin(false, DDP_DEFAULT_PORT);
@@ -931,11 +953,11 @@ void WLED::initInterfaces()
   server.begin();
 
   if (udpPort > 0 && udpPort != ntpLocalPort) {
-    udpConnected = notifierUdp.begin(udpPort);
-    if (udpConnected && udpRgbPort != udpPort)
-      udpRgbConnected = rgbUdp.begin(udpRgbPort);
-    if (udpConnected && udpPort2 != udpPort && udpPort2 != udpRgbPort)
-      udp2Connected = notifier2Udp.begin(udpPort2);
+    notifierSockets.udpConnected = notifierSockets.notifierUdp.begin(udpPort);
+    if (notifierSockets.udpConnected && udpRgbPort != udpPort)
+      notifierSockets.udpRgbConnected = notifierSockets.rgbUdp.begin(udpRgbPort);
+    if (notifierSockets.udpConnected && udpPort2 != udpPort && udpPort2 != udpRgbPort)
+      notifierSockets.udp2Connected = notifierSockets.notifier2Udp.begin(udpPort2);
   }
   if (ntpEnabled)
     ntpConnected = ntpUdp.begin(ntpLocalPort);

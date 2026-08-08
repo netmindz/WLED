@@ -576,6 +576,7 @@ static void sendArtnetPollReply(ArtPollReply *reply, IPAddress ipAddress, uint16
     pollReplyCount = 0;
   }
 
+  WiFiUDP& notifierUdp = getNotifierUdp();
   notifierUdp.beginPacket(ipAddress, ARTNET_DEFAULT_PORT);
   notifierUdp.write(reply->raw, sizeof(ArtPollReply));
   notifierUdp.endPacket();

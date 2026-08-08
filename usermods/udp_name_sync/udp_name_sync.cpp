@@ -29,7 +29,7 @@ class UdpNameSync : public Usermod {
     void loop() override {
       if (!enabled) return;
       if (!WLED_CONNECTED) return;
-      if (!udpConnected) return;
+      if (!isUdpConnected()) return;
       Segment& mainseg = strip.getMainSegment();
       if (segmentName[0] == '\0' && !mainseg.name) return; //name was never set, do nothing
 
@@ -39,6 +39,7 @@ class UdpNameSync : public Usermod {
       IPAddress broadcastIp = uint32_t(WLEDNetwork.localIP()) | ~uint32_t(WLEDNetwork.subnetMask());
       byte udpOut[WLED_MAX_SEGNAME_LEN + 2];
       udpOut[0] = kPacketType; // custom usermod packet type (avoid 0..5 used by core protocols)
+      WiFiUDP& notifierUdp = getNotifierUdp();
 
       if (segmentName[0] != '\0' && !mainseg.name) { // name cleared
         notifierUdp.beginPacket(broadcastIp, udpPort);
