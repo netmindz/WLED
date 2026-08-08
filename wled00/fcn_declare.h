@@ -294,6 +294,14 @@ bool isAsterisksOnly(const char* str, byte maxLen);
 void handleSettingsSet(AsyncWebServerRequest *request, byte subPage);
 bool handleSet(AsyncWebServerRequest *request, const String& req, bool apply=true);
 
+//wled.cpp
+WiFiUDP& getNotifierUdp();
+WiFiUDP& getNotifier2Udp();
+WiFiUDP& getRgbUdp();
+bool isUdpConnected();
+bool isUdp2Connected();
+bool isUdpRgbConnected();
+
 //udp.cpp
 void handleNotifications();
 

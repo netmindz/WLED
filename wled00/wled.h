@@ -681,9 +681,9 @@ WLED_GLOBAL uint16_t udpPort    _INIT(21324); // WLED notifier default port
 WLED_GLOBAL uint16_t udpPort2   _INIT(65506); // WLED notifier supplemental port
 WLED_GLOBAL uint16_t udpRgbPort _INIT(19446); // Hyperion port
 WLED_GLOBAL uint8_t  udpNumRetries _INIT(0);  // Number of times a UDP sync message is retransmitted. Increase to increase reliability
-WLED_GLOBAL bool     udpConnected _INIT(false);
-WLED_GLOBAL bool     udp2Connected _INIT(false);
-WLED_GLOBAL bool     udpRgbConnected _INIT(false);
+// notifierUdp/notifier2Udp/rgbUdp and udpConnected/udp2Connected/udpRgbConnected
+// are private to wled.cpp (NotifierSockets) - use getNotifierUdp()/getNotifier2Udp()/
+// getRgbUdp()/isUdpConnected()/isUdp2Connected()/isUdpRgbConnected() instead.
 
 // ui style
 WLED_GLOBAL bool showWelcomePage _INIT(false);
@@ -797,7 +797,6 @@ WLED_GLOBAL AsyncClient     *hueClient _INIT(NULL);
 WLED_GLOBAL AsyncWebHandler *editHandler _INIT(nullptr);
 
 // udp interface objects
-WLED_GLOBAL WiFiUDP notifierUdp, rgbUdp, notifier2Udp;
 WLED_GLOBAL WiFiUDP ntpUdp;
 WLED_GLOBAL ESPAsyncE131 e131 _INIT_N(((handleE131Packet)));
 WLED_GLOBAL ESPAsyncE131 ddp  _INIT_N(((handleE131Packet)));

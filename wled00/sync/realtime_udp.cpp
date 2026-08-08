@@ -16,6 +16,7 @@ static uint8_t  tpmPacketCount = 0;
 static uint16_t tpmPayloadFrameSize = 0;
 
 static void sendTPM2Ack() {
+  WiFiUDP& notifierUdp = getNotifierUdp();
   notifierUdp.beginPacket(notifierUdp.remoteIP(), TMP2NET_OUT_PORT);
   uint8_t response_ack = 0xac;
   notifierUdp.write(&response_ack, 1);
@@ -26,6 +27,7 @@ static void sendTPM2Ack() {
 // Returns true if a packet was read (handled or discarded), false if nothing was pending.
 bool handleHyperionPacket()
 {
+  WiFiUDP& rgbUdp = getRgbUdp();
   size_t packetSize = rgbUdp.parsePacket();
   if (!packetSize) return false;
 
@@ -62,7 +64,7 @@ bool handleDirectRealtimePacket(uint8_t *udpIn, size_t packetSize, bool isSupp)
     }
     if (tpmType != 0xda) return true; //ignore, not TPM2.NET data
 
-    realtimeIP = (isSupp) ? notifier2Udp.remoteIP() : notifierUdp.remoteIP();
+    realtimeIP = (isSupp) ? getNotifier2Udp().remoteIP() : getNotifierUdp().remoteIP();
     realtimeLock(realtimeTimeoutMs, REALTIME_MODE_TPM2NET);
     if (realtimeOverride) return true;
 
@@ -88,7 +90,7 @@ bool handleDirectRealtimePacket(uint8_t *udpIn, size_t packetSize, bool isSupp)
 
   //UDP realtime: 1 warls 2 drgb 3 drgbw 4 dnrgb 5 dnrgbw
   if (udpIn[0] > 0 && udpIn[0] < 6) {
-    realtimeIP = (isSupp) ? notifier2Udp.remoteIP() : notifierUdp.remoteIP();
+    realtimeIP = (isSupp) ? getNotifier2Udp().remoteIP() : getNotifierUdp().remoteIP();
     DEBUG_PRINTLN(realtimeIP);
     if (packetSize < 2) return true;
 

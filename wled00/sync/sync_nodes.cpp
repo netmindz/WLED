@@ -11,7 +11,7 @@ bool parseNodeInfoPacket(const uint8_t *udpIn, unsigned len, bool isSupp, const 
 {
   if (!(isSupp && udpIn[0] == 255 && udpIn[1] == 1 && len >= 40)) return false;
 
-  if (!nodeListEnabled || notifier2Udp.remoteIP() == localIP) return true;
+  if (!nodeListEnabled || getNotifier2Udp().remoteIP() == localIP) return true;
 
   unsigned unit = udpIn[39];
   NodesMap::iterator it = Nodes.find(unit);
@@ -67,7 +67,7 @@ void refreshNodeList()
 \*********************************************************************************************/
 void sendSysInfoUDP()
 {
-  if (!udp2Connected) return;
+  if (!isUdp2Connected()) return;
 
   IPAddress ip = WLEDNetwork.localIP();
   if (!ip || ip == IPAddress(255,255,255,255)) ip = IPAddress(4,3,2,1);
@@ -100,6 +100,7 @@ void sendSysInfoUDP()
     data[40+i] = (build>>(8*i)) & 0xFF;
 
   IPAddress broadcastIP(255, 255, 255, 255);
+  WiFiUDP& notifier2Udp = getNotifier2Udp();
   notifier2Udp.beginPacket(broadcastIP, udpPort2);
   notifier2Udp.write(data, sizeof(data));
   notifier2Udp.endPacket();

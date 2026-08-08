@@ -20,9 +20,9 @@ static NotifierSendState notifierSend;
 void notify(byte callMode, bool followUp)
 {
 #ifndef WLED_DISABLE_ESPNOW
-  if (!udpConnected && !useESPNowSync) return;
+  if (!isUdpConnected() && !useESPNowSync) return;
 #else
-  if (!udpConnected) return;
+  if (!isUdpConnected()) return;
 #endif
   if (!syncGroups || !sendNotificationsRT) return;
   switch (callMode)
@@ -189,11 +189,12 @@ void notify(byte callMode, bool followUp)
       DEBUG_PRINTLN(F("ESP-NOW sending packet failed."));
     }
   }
-  if (udpConnected)
+  if (isUdpConnected())
 #endif
   {
     DEBUG_PRINTLN(F("UDP sending packet."));
     IPAddress broadcastIp = ~uint32_t(WLEDNetwork.subnetMask()) | uint32_t(WLEDNetwork.gatewayIP());
+    WiFiUDP& notifierUdp = getNotifierUdp();
     notifierUdp.beginPacket(broadcastIp, udpPort);
     notifierUdp.write(udpOut, WLEDPACKETSIZE); // TODO: add actual used buffer size
     notifierUdp.endPacket();
@@ -207,7 +208,7 @@ void notify(byte callMode, bool followUp)
 // send-retry check so the dispatcher doesn't need to know notify()'s internal state.
 void notifyRetryIfNeeded()
 {
-  if (udpConnected && (notifierSend.count < udpNumRetries) && ((millis() - notifierSend.lastSentTime) > 250)) {
+  if (isUdpConnected() && (notifierSend.count < udpNumRetries) && ((millis() - notifierSend.lastSentTime) > 250)) {
     notify(notifierSend.lastCallMode, true);
   }
 }
